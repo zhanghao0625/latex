@@ -1,5 +1,4 @@
 .DS_Store
-**/build/
 **/tmp/
 *.aux
 *.log
@@ -8,4 +7,7 @@
 *.bbl
 *.blg
 *.synctex.gz
+*.fdb_latexmk
+*.fls
+*.xdv
 __pycache__/
