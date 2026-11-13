@@ -1,0 +1,392 @@
+\documentclass[UTF8,a4paper,11pt,fontset=fandol]{ctexart}
+\usepackage[margin=23mm,headheight=15pt]{geometry}
+\usepackage{amsmath,amssymb,bm,booktabs,tabularx,longtable,array,graphicx}
+\usepackage{xcolor,fancyhdr,enumitem,caption,xurl}
+\usepackage[numbers,sort&compress]{natbib}
+\usepackage[colorlinks=true,linkcolor=teal,citecolor=teal,urlcolor=teal,bookmarksnumbered=true]{hyperref}
+\definecolor{ink}{HTML}{16324F}
+\ctexset{section={format=\Large\bfseries\color{ink}},subsection={format=\large\bfseries}}
+\pagestyle{fancy}\fancyhf{}
+\fancyhead[L]{\small 牵引引导与全身柔顺控制}
+\fancyhead[R]{\small 代码分析与研究方案}
+\fancyfoot[C]{\thepage}
+\setlength{\parskip}{4pt}
+\setlist{nosep,leftmargin=2em}
+\renewcommand{\arraystretch}{1.22}
+\newcolumntype{P}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\clip}{\operatorname{clip}}
+\newcommand{\sgn}{\operatorname{sign}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\code}[1]{\texttt{\nolinkurl{#1}}}
+\newcommand{\ev}[1]{\textsuperscript{[代码 #1]}}
+\hypersetup{pdftitle={牵引引导与全身柔顺控制：当前实现分析、相关方法与评价协议},pdfauthor={zhanghao0625}}
+\title{\vspace{-12mm}\textbf{牵引引导与全身柔顺控制}\\[5pt]\Large 当前实现分析、相关方法与评价协议}
+\author{基于 Cerebrix H6 冻结底座牵引任务的技术分析}
+\date{2026 年 11 月 13 日}
+\begin{document}
+\maketitle
+\begin{abstract}
+本文将目标定义为机器人在外部牵引下呈现可调的质量--阻尼响应，并检查当前 H6 速度修正网络是否能够表达这一目标。当前方案冻结运动底座，训练一个 $83\!\to\!256\!\to\!128\!\to\!3$ 的 MLP，使用 PPO 学习三维速度指令修正。代码存在三维可重建的指令冗余，其性能影响需要消融实验验证。当前力到速度映射在平移方向立即饱和，前向参考仅取 $-0.5,0,1.2\,\mathrm{m/s}$，由此限制了奖励对连续力幅值响应的表达能力。本文给出逐项推导、相关文献方案、可实施的动态参考模型和评价协议。文中图表为公式计算或实验设计，性能结论以代码检查为限，待验证的算法收益均明确标注。
+\end{abstract}
+\noindent\textbf{审阅范围}\quad 本地 \code{cts-moe-him} 仓库的干净提交
+\code{57a05ee00d229da6fd6f10defcc51e947247d6c6}。分析配方为
+\code{policy8_frozen_cts_teacher_aligned_v3} 的 \code{baseline}，对应现有 H6 牵引 5k 实验。其他 \code{alpha10}/\code{beta40} 配方会改变下文的离散化结论。文献检索截至文档日期，采用作者论文或官方项目页。本文未重新运行机器人训练或实机实验。
+\clearpage
+\tableofcontents
+\newpage
+
+\section{问题定义}
+\subsection{任务目标与系统边界}
+人在机器人手腕、把手或机身施加牵引，希望机器人沿牵引方向平稳移动、适当转向，松手后逐渐回到原始速度指令，并通过虚拟质量、转动惯量和阻尼调节响应。完整的全身任务还要求手臂、机身与支撑腿协调，满足关节、接触和工作空间约束。
+
+当前代码实现的验证对象是 12 关节四足机器人上的机身牵引任务。外力施加在 base 刚体质心，控制接口为平面速度 $(v_x,v_y,\omega_z)$，当前实现覆盖四足行走与机身响应。手腕作用点、机械臂自由度和末端工作空间属于扩展任务，需要额外建模。\ev{C1,C7}
+
+定义原始速度指令 $\bm c^0_t\in\R^3$、速度修正 $\bm\delta_t\in\R^3$、合成指令
+\begin{equation}
+\bm c_t=\bm c^0_t+\bm\delta_t.
+\label{eq:compose}
+\end{equation}
+$\bm\delta_t$ 的前两项单位为 $\mathrm{m/s}$，第三项为 $\mathrm{rad/s}$。固定采样间隔下，指令速度变化率为 $(\bm c_t-\bm c_{t-1})/\Delta t$。持续输出 $\delta_x=1.2$ 表示持续的速度偏移，只有相邻时刻速度的差再除以 $\Delta t$ 才对应变化率。
+
+若牵引发生在距机身参考点 $\bm r$ 的手腕位置，将测得的力/力矩变换到统一坐标系后，应使用
+\begin{equation}
+\bm w_h=[F_x,F_y,\tau_z]^\top,
+\qquad \tau_z=(\bm r\times\bm F)_z+\tau_{h,z}.
+\label{eq:wrench}
+\end{equation}
+绕竖直轴的力矩与水平力的方向角承担不同控制含义。当前代码用方向角生成转向指令，式~\eqref{eq:wrench} 则描述物理作用点引起的力矩。
+
+\subsection{希望学习的动力学关系}
+在固定局部平面坐标系内，将期望修正状态记为 $\bm\delta_{\rm ref}$，质量--阻尼目标可写为
+\begin{equation}
+\underbrace{\operatorname{diag}(m_x,m_y,J_z)}_{\bm M}
+\dot{\bm\delta}_{\rm ref}
++\underbrace{\operatorname{diag}(d_x,d_y,d_\psi)}_{\bm D}
+\bm\delta_{\rm ref}=\bm w_h,
+\qquad \bm M\succ0,\ \bm D\succ0.
+\label{eq:admittance}
+\end{equation}
+平移质量的单位为 kg，平移阻尼为 $\mathrm{N\,s/m}$，转动惯量为 $\mathrm{kg\,m^2}$。恒力下稳态修正为 $\bm D^{-1}\bm w_h$，单轴响应时间常数为 $m/d$。这样，力幅值、稳态速度与响应快慢具有可解释关系。若需要松手后回到指定位置，可增加位置状态和刚度项 $\bm K(\bm x-\bm x_0)$。
+
+大角度转向时，应在世界系积分平移状态，再变换到机身系下发指令，或显式处理旋转坐标系的导数项。直接在持续旋转的机身系使用式~\eqref{eq:admittance}，属于小转角近似。
+
+\subsection{观测条件与学习问题}
+部署时可获得本体传感信息、历史动作与用户指令，真实外力可能不可测。可用历史 $h_t=(o_t,\ldots,o_{t-H+1})$ 形成部分可观测控制问题。若有腕部六维力传感器，外力可经补偿、滤波后直接进入参考模型。若无力传感器，则需要从运动响应中估计外力或相关隐状态。
+
+目标应同时包含实际响应对式~\eqref{eq:admittance} 的一致性、行走稳定性、松手恢复、交互冲击和部署开销。参考指令的回归误差只能度量其中一部分。训练中可以使用仿真真值作为标签和 critic 输入，部署 actor 的输入需由实际传感器产生。
+
+\section{参考代码中的当前解决方案}
+\subsection{环境、网络与训练参数归属}
+训练入口为 \code{scripts/reinforcement_learning/traction/train_frozen_latent.py}。
+任务 \code{Cerebrix-Traction-Rough-Vita01evt-v1} 继承现有 rough 地形、机器人、动作处理和域随机化配置。牵引模块接管外力，采用 $0.005\,\mathrm{s}$ 物理步长、每个控制周期 4 个物理步，即 $50\,\mathrm{Hz}$ 控制。力幅值按全局 200 控制步周期更新，周期内 phase 大于 150 时清零。\ev{C1,C7}
+
+\begin{table}[htbp]\centering\small
+\begin{tabularx}{\linewidth}{P{32mm}YP{23mm}}
+\toprule 模块 & 输入与输出 & 训练状态\\\midrule
+冻结 CTS 编码器 & $270$ 维历史 $h_t\mapsto z_t\in\R^{32}$ & 冻结\\
+冻结运动 actor & 当前观测与编码特征 $\mapsto12$ 维关节动作 & 冻结\\
+速度修正 MLP & $[o_t,z_t,\mathrm{cmd\_ori}_t]\in\R^{83}\mapsto\bm\mu_t\in\R^3$ & PPO 更新\\
+修正分布标准差 & 独立于状态的三维可学习参数 & PPO 更新\\
+奖励 critic & $249\to512\to256\to128\to1$ & 价值回归\\
+约束 critic & $249\to512\to256\to128\to3$，末端 Softplus & 代价价值回归\\\bottomrule
+\end{tabularx}
+\caption{当前 H6 牵引配方的模块分工。底座冻结仍可在训练时使用归档标准差采样关节动作。}
+\end{table}
+
+修正 MLP 结构为 $83\to256\to128\to3$，两个隐藏层使用 ELU。当前 teacher-aligned 配方使用默认 Linear 初始化和初始修正标准差 $1.0$，训练时采样修正与底座关节动作，推理时使用均值。代码中的 teacher-aligned 命名描述其参考训练机制，当前网络复用冻结 CTS 特征，独立 GRU 外力估计器属于后文讨论的研究方案。\ev{C2,C3}
+
+每帧 $45$ 维观测按顺序包含合成指令 3 维、角速度 3 维、重力投影 3 维、关节位置偏差 12 维、关节速度 12 维、上一关节动作 12 维。六帧按最新帧在前拼接为 270 维历史。令 $S=\operatorname{diag}(2,2,0.25)$，常规连续运行时
+\begin{equation}
+ o_t[0{:}3]=S(\bm c^0_t+\bm\delta_{t-1}),\qquad
+ \mathrm{cmd\_ori}_t=[S\bm c^0_t,\ S\bm\delta_{t-1}].
+\label{eq:redundant}
+\end{equation}
+重置边界的历史填充与终止观测由 wrapper 单独处理。\ev{C4}
+
+\subsection{从外力到参考修正的精确映射}
+将力表达在机身坐标系，定义带阈值和限幅的函数
+\begin{equation}
+ g(F;l,u)=\begin{cases}
+ 0,& |F|\le\alpha,\\
+ \clip\left(\dfrac{F+\alpha\sgn(F)}{\beta},l,u\right),&|F|>\alpha.
+ \end{cases}
+\end{equation}
+当前 baseline 的 $\alpha=17.5\,\mathrm N$、$\beta=20\,\mathrm{N\,s/m}$，因此
+\begin{equation}
+ \delta_{x,\rm ref}=g(F_x;-0.5,1.2),\qquad
+ \delta_{y,\rm ref}=g(F_y;-0.5,0.5).
+\label{eq:force-map}
+\end{equation}
+该式直接输出速度修正。它包含零区、符号偏置和限幅，当前参考值由当时的力幅值代数计算。\ev{C3,C5}
+
+转向由 $\theta=\operatorname{atan2}(F_y,F_x)$ 决定，单位为 rad。
+\begin{equation}
+ \delta_{\omega,\rm ref}=\begin{cases}
+ \clip\left(\dfrac{\theta+0.6\sgn(\theta)}{2},-0.8,0.8\right),
+ &\|\bm F_{xy}\|>17.5\ \text{且}\ |\theta|>0.6,\\
+ 0,&\text{其余情况}.
+ \end{cases}
+\end{equation}
+其值域为 $\{0\}\cup[-0.8,-0.6)\cup(0.6,0.8]$。各分量依赖同一股力，取值组合受到方向约束。\ev{C5}
+
+\begin{table}[htbp]\centering
+\begin{tabular}{rrrrl}
+\toprule $F_x$ (N)&$F_y$ (N)&$\delta_{x,\rm ref}$&$\delta_{y,\rm ref}$&$\delta_{\omega,\rm ref}$\\\midrule
+0&0&0&0&0\\
+10&0&0&0&0\\
+18&0&1.2&0&0\\
+50&0&1.2&0&0\\
+20&20&1.2&0.5&0.693\\
+13&13&0&0&0.693\\
+-20&-5&-0.5&0&-0.8\\\bottomrule
+\end{tabular}
+\caption{直接按代码公式计算的参考值。平移单位为 m/s，转向单位为 rad/s。}
+\end{table}
+
+\subsection{奖励、时序与 PPO 更新}
+以 $\bm\delta_t$ 表示本帧采样输出经动作限幅和死区后的修正，柔顺奖励在乘整体权重前为
+\begin{equation}
+ r_{\rm comp,t}=-\left[(\delta_{x,t}-\delta_{x,\rm ref})^2
+ +(\delta_{y,t}-\delta_{y,\rm ref})^2
+ +0.05(\delta_{\omega,t}-\delta_{\omega,\rm ref})^2\right].
+\label{eq:comp}
+\end{equation}
+MLP 修正动作的限幅范围为 $[-0.5,1.3]\times[-0.5,0.5]\times[-1.5,1.5]$，平移范数和转向绝对值小于等于 $0.05$ 时分别归零。奖励参考的上限与动作本身的限幅各有独立参数。\ev{C5,C6}
+
+实际速度跟踪使用上一帧处理后的修正。记该步原始指令为 $\bm c^0_t$，则
+\begin{align}
+ r_{v,t}&=\exp\left(-\frac{\|\bm c^0_{xy,t}+\bm\delta_{xy,t-1}-\bm v_{xy,t}\|^2}{0.25}\right),\\
+ r_{\omega,t}&=\exp\left(-\frac{(c^0_{\omega,t}+\delta_{\omega,t-1}-\omega_{z,t})^2}{0.25}\right),\\
+ r_t&=\Delta t\left(5r_{\rm comp,t}+r_{v,t}+0.5r_{\omega,t}+\sum_j w_jr_{j,t}\right).
+\end{align}
+其他奖励包括姿态、机身高度、关节力矩、功率、动作平滑和碰撞等项。对 $F_x=18\,\mathrm N$，若 $\delta_x=0.8$ 且其他误差为零，则柔顺项贡献为 $-5(0.8-1.2)^2=-0.8$，乘 $\Delta t=0.02$ 后为 $-0.016$。\ev{C6}
+
+一步流程为观测历史、采样底座动作与修正、执行物理步、更新外力标签、计算奖励、把修正写入下一帧观测。因而式~\eqref{eq:comp} 检查本帧修正，运动跟踪检查上帧修正带来的响应。外力重新采样时，新标签可能尚未产生可观测的物理效应。\ev{C7,C8}
+
+PPO 通过交互轨迹、GAE 和 clipped surrogate 更新修正策略。令
+$\rho_t=\pi_\theta(u_t|h_t)/\pi_{\rm old}(u_t|h_t)$，其策略项为
+\begin{equation}
+ L_{\rm clip}=-\E\left[\min\big(\rho_t\hat A_t,
+ \clip(\rho_t,1-\epsilon,1+\epsilon)\hat A_t\big)\right].
+\end{equation}
+完整损失还包含奖励价值回归、代价价值回归、约束项与熵项。当前路径通过轨迹回报更新 actor，平方误差以式~\eqref{eq:comp} 的 reward 进入优势估计。底座参数由冻结与优化器归属检查约束。\ev{C8}\cite{schulman2017}
+
+\section{当前实现的问题分析}
+\subsection{MLP 输入存在可重建冗余}
+由式~\eqref{eq:redundant} 可得，常规观测下合成指令等于 \code{cmd_ori} 中两个三维向量的和。MLP 同时收到 $o_t[0{:}3]$ 与这两个向量，存在三维线性可重建冗余。冻结 latent 也由包含指令的历史产生，不过它的 32 个特征经过非线性编码，不能逐维判定为重复。\ev{C2,C4}
+
+显式提供 $\bm c^0_t$ 和 $\bm\delta_{t-1}$ 有信息价值。例如，相同的 $1.2\,\mathrm{m/s}$ 合成指令可以来自用户主动命令，也可以来自牵引修正。只保留合成值会丢失分解关系。一个信息保持的消融方案是仅从新 MLP 的当前帧输入中去掉合成指令三维，保留 $42+32+6=80$ 维，冻结底座与冻结编码器继续使用原来的历史接口。
+
+冗余可能影响特征尺度、优化和对旧修正的依赖，但目前缺少对照实验来证明它已经导致失败。建议比较原始 83 维、上述 80 维、以及保留合成指令和原始指令的 80 维方案。评价时同时观察闭环跟踪、松手残余修正和跨指令泛化。重置、裁剪或噪声处理可能破坏简单重建关系，应对正常帧和重置帧分别检查。
+
+\subsection{立即饱和使平移参考成为三个固定值}
+当 $F_x>17.5$ 时，
+\begin{equation}
+ \frac{F_x+17.5}{20}>\frac{35}{20}=1.75>1.2.
+\end{equation}
+当 $F_x<-17.5$ 时，原始值小于 $-1.75$，也已低于后退下限 $-0.5$。因此可以严格化简为
+\begin{equation}
+ \delta_{x,\rm ref}=\begin{cases}
+ -0.5,&F_x<-17.5,\\0,&|F_x|\le17.5,\\1.2,&F_x>17.5,
+ \end{cases}\quad
+ \delta_{y,\rm ref}=\begin{cases}
+ -0.5,&F_y<-17.5,\\0,&|F_y|\le17.5,\\0.5,&F_y>17.5.
+ \end{cases}
+\label{eq:discrete}
+\end{equation}
+讨论中的“逼迫网络输出 0/1”对应前拉和松手两种状态下，柔顺奖励鼓励输出 $1.2$ 和 $0$。加入后拉则出现第三个值。actor 本身输出连续值，并会受到其他奖励、探索与观测不确定性的共同影响。
+
+\begin{figure}[htbp]\centering
+\includegraphics[width=\linewidth]{figures/reference_map.pdf}
+\caption{当前 baseline 的精确平移参考映射。实心点表示阈值本身取零，空心点表示饱和分支的开端。图由公式生成。}
+\end{figure}
+
+这使 $18\,\mathrm N$ 与 $50\,\mathrm N$ 前向力对应同一个目标，奖励无法表达“在未达到合理运动上限时，拉力越大、跟随速度越大”。阈值附近会出现参考跳变，松手时参考直接归零。$m/d$ 响应时间常数与虚拟惯量也没有进入当前参考状态的演化。
+
+若给定观测无法唯一判断有无前拉，单独最小化平方误差时，理想预测是条件均值。例如只有 $0$ 与 $1.2$ 两类标签，前拉条件概率为 $p$，则最优预测为 $1.2p$。因此中间输出也可能来自部分可观测性。该结论是单步 MSE 的数学性质，PPO 在多奖励闭环中的解还受未来状态影响。
+
+\subsection{标签时序、力冲量与转向含义}
+外力在物理步之后更新，compliance 使用更新后的力标签。在切换时刻，动作的输入仍来自此前观测，形成因果信息不足。监督回归和 PPO 都需要处理这一时序。应记录观测时间戳、采样时间戳、每个物理子步实际受力与奖励标签时间戳，按实际可观测效应设计延迟目标或历史状态。\ev{C7,C8}
+
+外力作用持续性由 \code{LegacyForceSemantics} 指定。若标量幅值 $F$ 仅在一个 $0.005\,\mathrm s$ 子步作用，则每个 $0.02\,\mathrm s$ 控制周期的冲量为 $0.005F$，平均力为 $F/4$。若作用持续四个子步，则冲量为 $0.02F$。代码参考使用标签幅值，动力学辨识应以实际冲量除以采样周期形成输入。本分析保留两种分支，具体运行应核对其已存储的原生语义报告。\ev{C7}
+
+当前转向参考由 $\operatorname{atan2}(F_y,F_x)$ 得到。后方拉力在负 $x$ 轴附近的方向角可能从 $+\pi$ 跳到 $-\pi$，转向目标相应切换符号。该策略可表达“朝拉力方向转身”，用于可调偏航惯量时则需要式~\eqref{eq:wrench} 的力矩输入、动态状态和独立的转向意图设计。
+
+\subsection{直接 MSE 与 PPO 应比较什么}
+已知参考标签时，可以训练同一 MLP 均值满足
+\begin{equation}
+ L_{\rm sup}=\E\left[\|W(\bm\mu_\theta(h_t,\mathrm{cmd\_ori}_t)-\bm\delta_{\rm ref,t})\|_2^2\right].
+\end{equation}
+$W$ 用于统一不同单位或权重。回归原始均值可避免硬限幅区梯度为零的问题，部署仍执行相同动作处理。标签需与输入时序一致。由于修正会改变后续历史，训练数据还应覆盖当前策略自己访问的状态，可采用 DAgger 式收集、重标注、迭代训练思路。\cite{ross2011}
+
+PPO 可以联合优化跟踪、平衡和约束满足，MSE 可以直接优化标签拟合。现有代码与实验记录尚不足以证明 PPO 相对 MSE 的收益。两者若都使用式~\eqref{eq:discrete}，都会继承参考幅值离散化的问题。应分别检验参考设计、输入设计和学习算法，避免同时改动后把全部收益归因给某一项。
+
+\clearpage
+\section{相关论文与适用范围}
+\begin{table}[htbp]\centering\small
+\begin{tabularx}{\linewidth}{P{32mm}Y Y}
+\toprule 文献 & 主要机制 & 对当前问题的参考价值\\\midrule
+FACET，2025\cite{facet2025} & 虚拟质量--弹簧--阻尼参考，teacher--student，GRU & 可调动力学响应与隐状态估计\\
+Seeing-Eye Quadruped，2023\cite{defazio2023} & 监督学习估计外力，RL 保持行走，牵引指导导航 & 分开评估外力感知与运动执行\\
+Learning Force Control，2024\cite{portela2024} & 末端力跟踪 RL，历史观测估计特权状态 & 机械臂与腿的全身力控制\\
+Safe Whole-Body Loco-Manipulation，2026\cite{schperberg2026} & 腕部 F/T、显式导纳、腿部 RL、Reference Governor & 有力传感器时的模块化实现\\
+Residual RL，2018 预印本\cite{johannink2018} & 已有控制器与学习残差叠加 & 明确残差的作用层级与职责\\\bottomrule
+\end{tabularx}
+\caption{选取的相近原始研究。年份采用参考文献中列出的版本。平台、传感器和任务差异应随对比实验一起记录。}
+\end{table}
+
+FACET 与目标最接近，使用动力学模型规定受力响应。Seeing-Eye 工作更侧重牵引方向的识别与导航，其导航目标和完整质量--阻尼响应的评价对象有差异。Portela 等的工作面向带机械臂的全身末端力控制，可补足当前质心牵引任务到手腕交互之间的能力需求。Schperberg 等的工作提供显式导纳与运动 RL 的组合路线，需要腕部力/力矩传感器。Residual RL 提供方法结构参考，原论文的装配实验和当前四足场景需分别验证。\cite{facet2025,defazio2023,portela2024,schperberg2026,johannink2018}
+
+\section{已有方法的解决方案与可迁移设计}
+\subsection{FACET 的动态参考与 teacher--student}
+FACET 用虚拟动力学生成 CoM 参考轨迹，其核心形式为
+\begin{equation}
+ m\ddot{\bm x}_{\rm ref}=K_p(\bm x_{\rm des}-\bm x_{\rm ref})
+ +K_d(\dot{\bm x}_{\rm des}-\dot{\bm x}_{\rm ref})+\bm f_{\rm ext}.
+\end{equation}
+策略通过位置与速度跟踪奖励学习响应，并在多个时间起点生成的参考之间进行平滑。第一阶段用特权信息训练 teacher，同时用历史传感信息训练估计器预测特权特征。第二阶段以 teacher 初始化 student，并继续用 PPO 适应估计误差。论文中的估计器为隐藏维度 256 的 GRU，策略输出关节目标。该方法提供动态参考、参数条件化与隐状态估计的组合。\cite{facet2025}
+
+迁移到当前冻结底座时，可以先把参考轨迹的速度分量变成底座命令，并测试底座的可跟踪范围。冻结底座的运动能力、时延和训练分布会限制可实现的虚拟动力学，直接替换参考公式的收益需要闭环验证。
+
+\subsection{监督力估计与直接全身力控制}
+Seeing-Eye 方法同时训练本体观测驱动的速度/外力估计器和 RL 行走策略。估计器使用仿真真值监督，估计力的方向进一步生成导航目标。迁移时可以增加
+$L_F=\E\|\hat{\bm F}-\bm F_{\rm applied}\|^2$，再将估计力输入动态参考。这样可分别量化力估计误差和底座执行误差。\cite{defazio2023}
+
+Portela 等的方法把末端力命令直接纳入任务，策略协调机械臂与腿。历史观测估计模块用监督损失学习特权状态，actor/critic 用 PPO 训练，奖励包含末端力、位置和机身运动项。该结构适合进一步扩展手腕交互，机器人模型、输出动作和训练环境都需支持机械臂。\cite{portela2024}
+
+\subsection{显式导纳与运动 RL 的组合}
+Schperberg 等使用腕部六维 F/T 传感器，将外部力旋量映射为末端速度，由机械臂与腿共同跟踪。其 Reference Governor 根据模型约束调整参考，状态估计采用神经网络增强的 Kalman filter。论文展示了 Go2 与六自由度机械臂上的交互。其约束保证依赖模型和假设，迁移时需重新建立对应的约束集合。\cite{schperberg2026}
+
+对当前系统，有力传感器时可直接构造“测力、动态导纳、速度底座”的链路。无力传感器时可加入力估计器或特权特征蒸馏。若需要学习补偿，将修正写为
+\begin{equation}
+ \bm\delta_t=\bm\delta_{\rm adm,t}+\bm r_\theta(h_t,\bm c^0_t,\bm\delta_{\rm adm,t}),
+\end{equation}
+其中 $\bm r_\theta$ 有幅值约束，用来补偿底座跟踪和地形影响。Residual RL 的原始思想是叠加已有控制输出与学习残差，当前式子是针对速度命令层的设计提案。\cite{johannink2018}
+
+\subsection{针对本仓库的动态参考方案}
+下面给出一个可直接用来设计实验的参考更新式。对单轴 $m\dot\delta+d\delta=F$，假设一个周期内 $F$ 恒定，精确离散化为
+\begin{equation}
+ \delta_{k+1}=e^{-d\Delta t/m}\delta_k+
+ \frac{1-e^{-d\Delta t/m}}{d}F_k.
+\label{eq:exact}
+\end{equation}
+之后再施加运动能力对应的速度与变化率限制。若需要力死区，可使用连续函数
+\begin{equation}
+F_{\rm eff}=\sgn(F)\max(|F|-F_0,0).
+\end{equation}
+在旋转轴将 $F,m,d$ 分别换为 $\tau_z,J_z,d_\psi$。
+
+取 $m=10\,\mathrm{kg}$、$d=20\,\mathrm{N\,s/m}$、$\Delta t=0.02\,\mathrm s$，持续 $20\,\mathrm N$ 拉力的稳态修正为 $1\,\mathrm{m/s}$，时间常数为 $0.5\,\mathrm s$，从静止开始的第一步约为 $0.0392\,\mathrm{m/s}$。松手后每步乘以 $e^{-0.04}$，形成可解释的衰减过程。该数值例子用于解释模型，实际虚拟参数需按底座能力与评价结果选择。
+
+\begin{figure}[htbp]\centering
+\includegraphics[width=\linewidth]{figures/reference_dynamics.pdf}
+\caption{解析示例。$1\le t<3\,\mathrm s$ 时施加 $20\,\mathrm N$，其余时间为零。当前参考即时切换，质量--阻尼参考按式~\eqref{eq:exact} 演化。曲线为参考模型计算结果。}
+\end{figure}
+
+实施时可依次完成三个可独立验收的实验。首先对齐已施加力与观测时间戳，用同一参考、同一数据预算比较 MSE 和 PPO。然后用动态参考替换当前代数映射，检查力幅值响应及松手衰减。最后将 $\bm M,\bm D$ 作为输入，并在训练中随机采样参数，比较显式测力、监督力估计和 GRU 特征估计三种传感条件。完整关节级 teacher--student 与冻结底座方案分别报告结果，保持任务能力的可比性。
+
+\section{评价指标与实验协议}
+\subsection{评价对象、参考与记录量}
+同时保存原始命令、MLP 均值、采样修正、处理后修正、参考修正、实际机身速度、参考模型状态、逐子步受力、接触、姿态和终止原因。以实际冲量除以控制周期构造 $\bar{\bm w}_k$，按相同时间基准计算所有算法的动态目标。
+
+模型一致性指标使用预先固定的 $\bm M,\bm D$ 及外力序列积分得到独立参考。参考模型从 episode 的统一初态初始化，避免每步用实际状态重置而掩盖长期偏差。全身实验另外记录末端速度、位置、腕力和工作空间约束。算法内部 reward 作为训练诊断保留。
+
+\subsection{拟合、运动与动力学一致性}
+\begin{longtable}{P{28mm}P{84mm}P{30mm}}
+\toprule 指标 & 定义与计算方式 & 单位/解释\\\midrule\endhead
+修正 RMSE & 各轴 $\sqrt{N^{-1}\sum_k(\delta_{j,k}-\delta_{j,\rm ref,k})^2}$，分别报告均值输出和处理后输出 & m/s 或 rad/s\\
+实际速度 RMSE & 各轴 $\sqrt{N^{-1}\sum_k(v_{j,k}-c^0_{j,k}-\delta_{j,\rm ref,k})^2}$，转向同理 & 反映闭环响应\\
+稳态力--速度增益 & 在无饱和恒力窗口拟合 $\bar\delta_j=\hat g_jF_j+b_j$，比较 $\hat g_j$ 与 $1/d_j$ & m/(N\,s)，报告偏置及置信区间\\
+响应时间常数 & 恒力或释放段拟合一阶模型，比较 $\hat T_j$ 与 $m_j/d_j$ & s，惯量响应\\
+动力学残差 & 单轴 $e_{F,k}=m(\delta^{\rm act}_{k+1}-\delta^{\rm act}_k)/\Delta t+d\delta^{\rm act}_k-\bar F_k$ & N，偏航为 N\,m\\
+端点/全身误差 & 末端位置 RMSE、速度 RMSE、腕力 RMSE，按固定坐标系分轴报告 & m、m/s、N\\\bottomrule
+\caption{第一组指标。$\delta^{\rm act}=v_{\rm actual}-c^0$，辨识时保持原始命令恒定。}
+\end{longtable}
+
+动力学残差采用所有方法一致的滤波与差分规则，同时披露滤波带宽和延迟。力--速度增益与时间常数在未饱和区间辨识，饱和区间单独报告。对于当前三值参考，预期非零区间的参考局部斜率为零，这可以由公式证明，实际机器人斜率仍需测量。
+
+\subsection{牵引起停、交互与稳定性}
+\begin{longtable}{P{28mm}P{84mm}P{30mm}}
+\toprule 指标 & 定义与计算方式 & 单位/解释\\\midrule\endhead
+牵引响应延迟 & 从真实受力开始，到沿预期方向的实际速度修正首次超过预设阈值并持续 0.2 s & s，阈值随协议公布\\
+松手恢复时间 & 从实际受力消失，到 $\|\delta^{\rm act}_{xy}\|<0.05$ 且 $|\delta^{\rm act}_{\omega}|<0.05$，持续 0.5 s & s，两阈值单位分别为 m/s、rad/s\\
+松手残余运动 & 固定释放后窗口内积分 $\int\|\delta^{\rm act}_{xy}\|dt$ 与 $\int|\delta^{\rm act}_{\omega}|dt$，同时比较目标衰减轨迹 & m、rad，目标依参数确定\\
+无力误响应 & 无力片段中，处理后修正超过上述阈值的时间占比与 RMS & \%，m/s、rad/s\\
+过冲与平滑度 & 目标非零时的归一化峰值过冲，实际加速度/jerk 的 RMS 与 P95，修正变化率 & \%、m/s$^2$、m/s$^3$\\
+碰撞峰值与冲量 & 固定障碍测试的 $\max\|F_{\rm contact}\|$、$\int\|F_{\rm contact}\|dt$，统一碰撞前速度 & N、N\,s\\
+稳定生存率 & 完成固定时长且无环境定义的跌倒、禁触和约束终止的 episode 比例，所有方法使用同一终止配置 & \%，Wilson 95\% CI\\
+姿态与执行约束 & roll/pitch 的峰值与 P95，关节越界占比、力矩饱和占比、足滑速度 & rad、\%、m/s\\
+计算与能耗 & 目标硬件上端到端推理 P50/P95，平均 $\sum_i|\tau_i\dot q_i|$ & ms、W\\\bottomrule
+\caption{第二组指标。提前终止或未恢复的 episode 计为失败/超时，同时给出数量，避免只统计成功片段。}
+\end{longtable}
+
+任务成功率另外要求 episode 存活、实际速度对独立参考的平移 RMSE 小于 $0.15\,\mathrm{m/s}$、转向 RMSE 小于 $0.15\,\mathrm{rad/s}$，且释放恢复时间超过目标模型恢复时间的部分不大于 $0.5\,\mathrm s$。这些容差作为初版实验设计预先固定，并附容差敏感性曲线。
+
+具有虚拟惯量时，释放后的非零速度属于目标动力学的一部分。恢复时间应与给定 $m/d$ 的目标曲线一起评价，额外报告相对目标的释放段积分误差。正向持续命令下，以相对原始命令的速度修正衡量恢复，避免把正常继续行走计为漂移。静止场景直接报告平均绝对功率，避免用接近零的位移计算能耗距离比。
+
+\subsection{测试矩阵与消融}
+以下为建议采用的实验协议，数值属于待执行设计。每个 episode 长 20 s，单次牵引从第 2 s 开始，按测试条件持续 0.2、1 或 3 s，剩余时间观测释放恢复。每个随机方法至少训练 5 个独立种子，每个测试条件至少评估 100 个 episode，使用一致的底座 checkpoint、环境种子和牵引时间序列。报告种子级均值与 95\% bootstrap 区间，并按场景展示 P95。训练集与测试集按完整轨迹、地形实例和扰动种子拆分。
+
+\begin{table}[htbp]\centering\small
+\begin{tabularx}{\linewidth}{P{29mm}Y}
+\toprule 维度 & 覆盖条件\\\midrule
+原始命令 & 零命令、直行、侧行、原地转向，包含训练范围内与保留的测试组合\\
+力幅值与方向 & $0,5,10,15,17,17.5,18,20,30,40,50\,\mathrm N$，正反方向与 45 度方向，补充负 $x$ 轴两侧方向\\
+时间波形 & 持续 0.2/1/3 s 的阶跃，斜坡、频率扫描、阈值附近波动、突然释放与反向牵引\\
+地形 & 平地、坡地、粗糙地形、上下台阶，记录实际坡度、台阶高和粗糙幅值，同时保留地形等级\\
+泛化 & 质量/摩擦、传感噪声、动作延迟和牵引作用点变化，记录参数数值与分布\\
+可调参数 & 以一个经验证可执行的基准 $(m_0,d_0)$ 为中心，分别测试 $0.5/1/2$ 倍，含训练内与留出组合\\\bottomrule
+\end{tabularx}
+\caption{评价测试矩阵。高幅值边界测试按机器人仿真与硬件能力确定执行范围。}
+\end{table}
+
+地形等级是课程变量，不能独立表征实际地形难度。论文中的比较应固定地形生成种子和几何参数，同时报告等级分布。大角度牵引及大力实验优先验证坐标变换、动作限幅和 episode 终止条件的一致性。
+
+\begin{table}[htbp]\centering\small
+\begin{tabularx}{\linewidth}{P{13mm}Y Y}
+\toprule 组别 & 配置 & 要回答的问题\\\midrule
+A & 原始 83 维 + 当前参考 + PPO & 当前配方的测量基线\\
+B & 80 维去冗余 + 当前参考 + PPO & 三维冗余的影响\\
+C & 原始 83 维 + 当前参考 + MSE & 标签拟合训练是否足够\\
+D & 80 维 + 动态参考 + MSE & 动态参考能否保留连续幅值与时序\\
+E & 与 D 相同输入及参考 + PPO 或 MSE 后 PPO & 闭环强化学习的增量收益\\
+F & 真值力 + 显式导纳 + 同一冻结底座 & 底座可实现响应与估计误差的分解\\
+G & 监督/GRU 估计 + 显式导纳 + 同一底座 & 无力传感条件下的可部署性能\\\bottomrule
+\end{tabularx}
+\caption{逐因素消融。B 对 A 检验输入，C 对 A 检验算法。参考设计另需在相同 80 维和训练算法下补齐静态/动态成对实验。}
+\end{table}
+
+训练预算同时报告环境步数、梯度更新次数和墙钟时间。F 使用特权力，作为参考性能条件单独标注。MSE 组应覆盖自己闭环访问的数据分布。对每组统一报告相同的动态一致性、无力误响应和稳定性指标，再单独给出其自身参考拟合误差，以免参考定义变化导致指标失去可比性。
+
+\clearpage
+\appendix
+\section{代码证据索引与复核方式}
+下列路径相对于仓库根目录。代码链接固定到本文审阅提交，私有仓库的在线查看权限取决于读者账户。文件中的函数名同时提供本地定位入口。
+
+\small
+\begin{longtable}{P{9mm}P{96mm}P{37mm}}
+\toprule 编号 & 路径与定位 & 支持的结论\\\midrule\endhead
+C1 & \code{source/cerebrix/cerebrix/tasks/manager_based/traction/config/rough_env_cfg.py}；\code{agents/traction_cfg.py}（相对 config 目录） & 环境继承、外力接管、当前策略类\\
+C2 & \code{source/cerebrix/cerebrix/rl/traction/latent_adapter.py} 的 \code{FrozenLatentAdapter} 和 \code{command_mean}；\code{models.py} 的 \code{_mlp} & 83 维输入、层宽、ELU、critic\\
+C3 & \code{source/cerebrix/cerebrix/rl/traction/teacher_aligned.py} 和 \code{latent_mechanisms.py} & $1.2$ 上限、初始化、采样开关\\
+C4 & \code{source/cerebrix/cerebrix/rl/traction/isaac_adapter.py} 的 \code{_critic_obs}；\code{latent_isaac.py}；\code{deployment_contract.py}；\code{source/cerebrix/cerebrix/utils/wrappers/himloco/vecenv_wrapper.py} & 合成指令、缩放、观测顺序与反馈\\
+C5 & \code{source/cerebrix/cerebrix/rl/traction/tensors.py} 的 \code{source_force_to_velocity}、\code{source_process_command}；\code{reference/reward_methods.py} 的 \code{_get_force_to_vel} & 力映射与修正动作处理\\
+C6 & \code{source/cerebrix/cerebrix/rl/traction/reference/reward_methods.py}；\code{reward_scales.json}、\code{source_recipe_parameters.json}（同目录）；\code{isaac_rewards.py} & reward 公式、权重与 dt\\
+C7 & \code{source/cerebrix/cerebrix/rl/traction/source_force_v2.py}；\code{source_force_isaac_v2.py}；\code{control.py} & 质心施力、物理子步、标签更新\\
+C8 & \code{source/cerebrix/cerebrix/rl/traction/latent_runner.py}；\code{latent_ppo.py}；\code{latent_feedback.py} & 交互时序、PPO、无独立估计器更新\\
+C9 & \code{docs/experiments/vita01evt_go2_transfer/p13_h6_traction_5k_20261101.md} & H6 5k 配方与既有实验背景\\\bottomrule
+\end{longtable}
+\normalsize
+代码提交入口为
+\url{https://github.com/VitaDynamics/cerebrix/tree/57a05ee00d229da6fd6f10defcc51e947247d6c6}。
+
+复核顺序为检查 C3 的实际配方，沿 C4 核实输入和历史顺序，再对照 C5、C6 计算参考和 reward，最后用 C7、C8 对齐真实物理施力、标签与动作。图中映射由 \code{scripts/plot_reference.py} 按本文公式生成，可独立重建。本文将输入冗余的性能影响、MSE 与 PPO 的比较、动态参考和 GRU 的迁移收益保留为第 6 节的待验证假设。
+
+\begingroup
+\raggedright
+\bibliographystyle{plainnat}
+\bibliography{references}
+\endgroup
+\end{document}
