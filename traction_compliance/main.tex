@@ -146,13 +146,20 @@ $\bm\delta_t$ 的前两项单位为 $\mathrm{m/s}$，第三项为 $\mathrm{rad/s
 \end{table}
 
 \subsection{奖励、时序与 PPO 更新}
-以 $\bm\delta_t$ 表示本帧采样输出经动作限幅和死区后的修正，柔顺奖励在乘整体权重前为
+以 $\bm\delta_t$ 表示本帧采样输出经动作限幅和死区后的修正。代码将下面一项命名为 \code{compliance}，其数学作用是参考修正跟踪，属于任务奖励。在乘整体权重前为
 \begin{equation}
  r_{\rm comp,t}=-\left[(\delta_{x,t}-\delta_{x,\rm ref})^2
  +(\delta_{y,t}-\delta_{y,\rm ref})^2
  +0.05(\delta_{\omega,t}-\delta_{\omega,\rm ref})^2\right].
 \label{eq:comp}
 \end{equation}
+
+\textbf{任务跟踪、平滑性与柔顺性。}式~\eqref{eq:comp} 比较同一时刻的输出与参考，直接度量任务误差。若需要限制相邻时刻的修正跳变，可另外设计平滑性奖励，例如固定采样周期下
+\begin{equation}
+ r_{\rm smooth,t}=-\|W_s(\bm\delta_t-\bm\delta_{t-1})\|^2,
+\end{equation}
+其中 $W_s$ 调整平移与转向的尺度。这是可选设计公式。单独最大化该项会允许始终输出零的解，此时运动底座仍可能抵抗牵引。柔顺性描述外力与实际运动的关系，可由式~\eqref{eq:admittance} 规定并评价。动态参考跟踪可以作为实现柔顺性的任务目标，其效果同时取决于参考模型和底座执行能力。当前 \code{compliance} 名称表达设计意图，三值参考的跟踪奖励本身仅保证对这些目标值的偏好。
+
 MLP 修正动作的限幅范围为 $[-0.5,1.3]\times[-0.5,0.5]\times[-1.5,1.5]$，平移范数和转向绝对值小于等于 $0.05$ 时分别归零。奖励参考的上限与动作本身的限幅各有独立参数。\ev{C5,C6}
 
 实际速度跟踪使用上一帧处理后的修正。记该步原始指令为 $\bm c^0_t$，则
@@ -161,7 +168,7 @@ MLP 修正动作的限幅范围为 $[-0.5,1.3]\times[-0.5,0.5]\times[-1.5,1.5]$�
  r_{\omega,t}&=\exp\left(-\frac{(c^0_{\omega,t}+\delta_{\omega,t-1}-\omega_{z,t})^2}{0.25}\right),\\
  r_t&=\Delta t\left(5r_{\rm comp,t}+r_{v,t}+0.5r_{\omega,t}+\sum_j w_jr_{j,t}\right).
 \end{align}
-其他奖励包括姿态、机身高度、关节力矩、功率、动作平滑和碰撞等项。对 $F_x=18\,\mathrm N$，若 $\delta_x=0.8$ 且其他误差为零，则柔顺项贡献为 $-5(0.8-1.2)^2=-0.8$，乘 $\Delta t=0.02$ 后为 $-0.016$。\ev{C6}
+其他奖励包括姿态、机身高度、关节力矩、功率、动作平滑和碰撞等项。对 $F_x=18\,\mathrm N$，若 $\delta_x=0.8$ 且其他误差为零，则参考修正跟踪项贡献为 $-5(0.8-1.2)^2=-0.8$，乘 $\Delta t=0.02$ 后为 $-0.016$。\ev{C6}
 
 一步流程为观测历史、采样底座动作与修正、执行物理步、更新外力标签、计算奖励、把修正写入下一帧观测。因而式~\eqref{eq:comp} 检查本帧修正，运动跟踪检查上帧修正带来的响应。外力重新采样时，新标签可能尚未产生可观测的物理效应。\ev{C7,C8}
 
@@ -196,7 +203,7 @@ $\rho_t=\pi_\theta(u_t|h_t)/\pi_{\rm old}(u_t|h_t)$，其策略项为
  \end{cases}
 \label{eq:discrete}
 \end{equation}
-讨论中的“逼迫网络输出 0/1”对应前拉和松手两种状态下，柔顺奖励鼓励输出 $1.2$ 和 $0$。加入后拉则出现第三个值。actor 本身输出连续值，并会受到其他奖励、探索与观测不确定性的共同影响。
+讨论中的“逼迫网络输出 0/1”对应前拉和松手两种状态下，参考修正跟踪奖励鼓励输出 $1.2$ 和 $0$。加入后拉则出现第三个值。actor 本身输出连续值，并会受到其他奖励、探索与观测不确定性的共同影响。
 
 \begin{figure}[htbp]\centering
 \includegraphics[width=\linewidth]{figures/reference_map.pdf}
