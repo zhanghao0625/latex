@@ -1,0 +1,69 @@
+\section{问题定义}
+\subsection{复杂地形下的人机牵引柔顺运动控制}
+
+人通过机器人手腕、把手或机身施加牵引力$F^s$，引导机器人平稳移动与转向，并在持续牵引下自适应通过复杂地形、保持动态平衡；牵引解除后，机器人平滑恢复原始速度指令。
+
+\subsection{网络输入与输出}
+每帧观测为 45 维，按以下顺序拼接：
+\begin{equation}
+\bm o_t=\left[
+\bm c_t^{\rm obs},\;
+\bm\omega_t^{\rm b},\;
+\bm g_t^{\rm b},\;
+(\bm q_t-\bm q_{\rm nom}),\;
+\dot{\bm q}_t,\;
+\bm a_{t-1}
+\right]^\top\in\R^{45}.
+\label{eq:proprio-observation}
+\end{equation}
+六项依次为速度指令（3）、机身角速度（3）、重力投影（3）、相对关节位置（12）、关节速度（12）和上一次关节动作（12）。其中 $\bm c_t^{\rm obs}$ 为观测中的速度指令。最近 $H$ 帧组成网络输入
+\begin{equation}
+h_t=\left[\bm o_t,\;\bm o_{t-1},\;\ldots,\;\bm o_{t-H+1}\right]^\top\in\R^{45H}.
+\label{eq:proprio-history}
+\end{equation}
+网络输出为三维平面速度修正
+\begin{equation}
+\bm\delta_t=f_\theta(h_t)
+=[\Delta v_{x,t},\Delta v_{y,t},\Delta\omega_{z,t}]^\top\in\R^3.
+\label{eq:network-io}
+\end{equation}
+输出依次修正前向、侧向和偏航速度，并按式~\eqref{eq:compose} 与原始指令叠加。
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+  node distance=12mm,
+  block/.style={draw=ink,fill=ink!4,rounded corners=2pt,
+    text width=36mm,minimum height=23mm,align=center,
+    inner sep=4pt,font=\small},
+  >={Stealth[length=2mm]},line width=0.7pt
+]
+\node[block] (history) {历史观测\\[3pt]
+  $h_t\in\R^{45H}$\\[2pt]{\footnotesize $(\bm o_t,\ldots,\bm o_{t-H+1})$}};
+\node[block,right=of history] (network) {速度修正网络\\[3pt]
+  $f_\theta$};
+\node[block,right=of network] (correction) {速度修正\\[3pt]
+  $\bm\delta_t\in\R^3$\\[2pt]{\footnotesize 前向、侧向、偏航}};
+\draw[->] (history) -- (network);
+\draw[->] (network) -- (correction);
+\end{tikzpicture}
+\caption{速度修正网络的任务层输入与输出。}
+\label{fig:network-io}
+\end{figure}
+
+\subsection{速度指令与牵引力转换}
+
+将速度修正 $\bm\delta_t\in\R^3$ 叠加到原始指令 $\bm c^0_t\in\R^3$，得到合成指令
+\begin{equation}
+\bm c_t=\bm c^0_t+\bm\delta_t.
+\label{eq:compose}
+\end{equation}
+平移与偏航分量的单位分别为 $\mathrm{m/s}$ 和 $\mathrm{rad/s}$。
+
+若牵引力作用于机身\code{base_link}之外的点 $P$，则其在机身坐标系 $b$ 中的等效力与力矩为：
+\begin{equation}
+\bm F^b=\bm R_{bs}\bm F^s,
+\qquad \bm\tau_{\rm eq}^b=\bm r_{bP}^b\times\bm F^b.
+\label{eq:force-transform}
+\end{equation}
+其中，$\bm R_{bs}$ 为从力的原表达坐标系 $s$ 到 $b$ 系的旋转矩阵，$\bm r_{bP}^b$ 为机身参考点指向 $P$ 的位矢（以 $b$ 系表示）。等效力矩由牵引力的力臂产生。

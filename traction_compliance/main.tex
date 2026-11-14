@@ -2,6 +2,8 @@
 \usepackage[margin=23mm,headheight=15pt]{geometry}
 \usepackage{amsmath,amssymb,bm,booktabs,tabularx,longtable,array,graphicx}
 \usepackage{xcolor,fancyhdr,enumitem,caption,xurl}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning}
 \usepackage[numbers,sort&compress]{natbib}
 \usepackage[colorlinks=true,linkcolor=teal,citecolor=teal,urlcolor=teal,bookmarksnumbered=true]{hyperref}
 \definecolor{ink}{HTML}{16324F}
@@ -37,22 +39,22 @@
 \tableofcontents
 \newpage
 
-\input{chapters/problem_definition}
+\input{chapters/0-problem_definition}
 
-\input{chapters/current_solution}
+\input{chapters/1-current_solution}
 
-\input{chapters/implementation_analysis}
+\input{chapters/2-implementation_analysis}
 
 \clearpage
-\input{chapters/related_work}
+\input{chapters/3-related_work}
 
-\input{chapters/transferable_methods}
+\input{chapters/4-transferable_methods}
 
-\input{chapters/evaluation_protocol}
+\input{chapters/5-evaluation_protocol}
 
 \clearpage
 \appendix
-\input{chapters/code_evidence}
+\input{chapters/6-code_evidence}
 
 \begingroup
 \raggedright
