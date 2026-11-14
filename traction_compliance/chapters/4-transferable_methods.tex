@@ -11,7 +11,7 @@ FACET 用虚拟动力学生成 CoM 参考轨迹，其核心形式为
 
 \subsection{监督力估计与直接全身力控制}
 Seeing-Eye 方法同时训练本体观测驱动的速度/外力估计器和 RL 行走策略。估计器使用仿真真值监督，估计力的方向进一步生成导航目标。迁移时可以增加
-$L_F=\E\|\hat{\bm F}-\bm F_{\rm applied}\|^2$，再将估计力输入动态参考。这样可分别量化力估计误差和底座执行误差。\cite{defazio2023}
+$L_F=\E\|\hat{\bm F}-\bm F_{\rm applied}\|^2$，再将估计力用于计算动态参考速度修正。这样可分别量化力估计误差和底座执行误差。\cite{defazio2023}
 
 Portela 等的方法把末端力命令直接纳入任务，策略协调机械臂与腿。历史观测估计模块用监督损失学习特权状态，actor/critic 用 PPO 训练，奖励包含末端力、位置和机身运动项。该结构适合进一步扩展手腕交互，机器人模型、输出动作和训练环境都需支持机械臂。\cite{portela2024}
 
@@ -24,8 +24,8 @@ Schperberg 等使用腕部六维 F/T 传感器，将外部力旋量映射为末�
 \end{equation}
 其中 $\bm r_\theta$ 有幅值约束，用来补偿底座跟踪和地形影响。Residual RL 的原始思想是叠加已有控制输出与学习残差，当前式子是针对速度命令层的设计提案。\cite{johannink2018}
 
-\subsection{针对本仓库的动态参考方案}
-下面给出一个可直接用来设计实验的参考更新式。对单轴 $m\dot\delta+d\delta=F$，假设一个周期内 $F$ 恒定，精确离散化为
+\subsection{针对本仓库的动态参考速度修正方案}
+下面给出一个可直接用来设计实验的参考速度修正更新式。对单轴 $m\dot\delta+d\delta=F$，假设一个周期内 $F$ 恒定，精确离散化为
 \begin{equation}
  \delta_{k+1}=e^{-d\Delta t/m}\delta_k+
  \frac{1-e^{-d\Delta t/m}}{d}F_k.
@@ -37,11 +37,11 @@ F_{\rm eff}=\sgn(F)\max(|F|-F_0,0).
 \end{equation}
 在旋转轴将 $F,m,d$ 分别换为 $\tau_{{\rm eq},z}^b,J_z,d_\psi$。
 
-取 $m=10\,\mathrm{kg}$、$d=20\,\mathrm{N\,s/m}$、$\Delta t=0.02\,\mathrm s$，持续 $20\,\mathrm N$ 拉力的稳态修正为 $1\,\mathrm{m/s}$，时间常数为 $0.5\,\mathrm s$，从静止开始的第一步约为 $0.0392\,\mathrm{m/s}$。松手后每步乘以 $e^{-0.04}$，形成可解释的衰减过程。该数值例子用于解释模型，实际虚拟参数需按底座能力与评价结果选择。
+取 $m=10\,\mathrm{kg}$、$d=20\,\mathrm{N\,s/m}$、$\Delta t=0.02\,\mathrm s$，持续 $20\,\mathrm N$ 拉力的稳态参考速度修正为 $1\,\mathrm{m/s}$，时间常数为 $0.5\,\mathrm s$，从静止开始的第一步约为 $0.0392\,\mathrm{m/s}$。松手后每步乘以 $e^{-0.04}$，形成可解释的衰减过程。该数值例子用于解释模型，实际虚拟参数需按底座能力与评价结果选择。
 
 \begin{figure}[htbp]\centering
 \includegraphics[width=\linewidth]{figures/reference_dynamics.pdf}
-\caption{解析示例。$1\le t<3\,\mathrm s$ 时施加 $20\,\mathrm N$，其余时间为零。当前参考即时切换，质量--阻尼参考按式~\eqref{eq:exact} 演化。曲线为参考模型计算结果。}
+\caption{解析示例。$1\le t<3\,\mathrm s$ 时施加 $20\,\mathrm N$，其余时间为零。当前参考速度修正即时切换，质量--阻尼参考速度修正按式~\eqref{eq:exact} 演化。曲线为参考模型计算结果。}
 \end{figure}
 
-实施时可依次完成三个可独立验收的实验。首先对齐已施加力与观测时间戳，用同一参考、同一数据预算比较 MSE 和 PPO。然后用动态参考替换当前代数映射，检查力幅值响应及松手衰减。最后将 $\bm M,\bm D$ 作为输入，并在训练中随机采样参数，比较显式测力、监督力估计和 GRU 特征估计三种传感条件。完整关节级 teacher--student 与冻结底座方案分别报告结果，保持任务能力的可比性。
+实施时可依次完成三个可独立验收的实验。首先对齐已施加力与观测时间戳，用同一参考速度修正、同一数据预算比较 MSE 和 PPO。然后用动态参考速度修正替换当前代数参考速度修正，检查力幅值响应及松手衰减。最后将 $\bm M,\bm D$ 作为输入，并在训练中随机采样参数，比较显式测力、监督力估计和 GRU 特征估计三种传感条件。完整关节级 teacher--student 与冻结底座方案分别报告结果，保持任务能力的可比性。

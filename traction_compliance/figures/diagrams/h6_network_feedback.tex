@@ -1,0 +1,30 @@
+\begin{tikzpicture}[
+  node distance=5mm,
+  block/.style={draw=ink,fill=ink!4,rounded corners=2pt,
+    text width=116mm,minimum height=11mm,align=center,
+    inner sep=5pt,font=\small},
+  input/.style={block,text width=43mm,minimum height=17mm},
+  >={Stealth[length=2mm]},line width=0.7pt
+]
+\node[input] (obs) at (-52mm,0) {\textbf{最新帧观测}\\[2pt]
+  $\bm o_t$（45 维）};
+\node[input] (latent) at (0,0) {\textbf{CTS 历史特征}\\[2pt]
+  $\bm z_t$（32 维）};
+\node[input] (cmd) at (52mm,0) {\textbf{指令反馈}\\[2pt]
+  \texttt{cmd\_ori}（6 维）};
+
+\node[block,below=9mm of latent] (mlp) {\textbf{速度修正 MLP}\quad $83\to256\to128\to3$};
+\node[block,below=of mlp] (process) {\textbf{修正处理与反馈}\\[2pt]
+  修正均值 $\bm\mu_t$（3 维，前向、侧向、偏航）\\[2pt]
+  训练时从均值对应的分布采样，经限幅与死区得到 $\bm\delta_t$\\[2pt]
+  将 $\bm\delta_t$ 写入下一帧指令反馈与观测
+  \quad $\bm c^{\rm obs}_{t+1}=S(\bm c^0_{t+1}+\bm\delta_t)$};
+\node[block,below=of process] (base) {\textbf{冻结运动控制模型}\\[2pt]
+  输入 $h_{t+1}$，输出 12 维关节动作 $\bm a_{t+1}$};
+
+\draw[->] (obs.south) -- ++(0,-4mm) -| ([xshift=-35mm]mlp.north);
+\draw[->] (latent.south) -- (mlp.north);
+\draw[->] (cmd.south) -- ++(0,-4mm) -| ([xshift=35mm]mlp.north);
+\draw[->] (mlp) -- (process);
+\draw[->] (process) -- (base);
+\end{tikzpicture}

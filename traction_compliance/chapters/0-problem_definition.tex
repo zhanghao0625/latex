@@ -31,22 +31,7 @@ h_t=\left[\bm o_t,\;\bm o_{t-1},\;\ldots,\;\bm o_{t-H+1}\right]^\top\in\R^{45H}.
 
 \begin{figure}[htbp]
 \centering
-\begin{tikzpicture}[
-  node distance=12mm,
-  block/.style={draw=ink,fill=ink!4,rounded corners=2pt,
-    text width=36mm,minimum height=23mm,align=center,
-    inner sep=4pt,font=\small},
-  >={Stealth[length=2mm]},line width=0.7pt
-]
-\node[block] (history) {历史观测\\[3pt]
-  $h_t\in\R^{45H}$\\[2pt]{\footnotesize $(\bm o_t,\ldots,\bm o_{t-H+1})$}};
-\node[block,right=of history] (network) {速度修正网络\\[3pt]
-  $f_\theta$};
-\node[block,right=of network] (correction) {速度修正\\[3pt]
-  $\bm\delta_t\in\R^3$\\[2pt]{\footnotesize 前向、侧向、偏航}};
-\draw[->] (history) -- (network);
-\draw[->] (network) -- (correction);
-\end{tikzpicture}
+\input{figures/diagrams/task_network_io}
 \caption{速度修正网络的任务层输入与输出。}
 \label{fig:network-io}
 \end{figure}
