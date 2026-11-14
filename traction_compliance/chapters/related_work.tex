@@ -1,0 +1,14 @@
+\section{相关论文与适用范围}
+\begin{table}[htbp]\centering\small
+\begin{tabularx}{\linewidth}{P{32mm}Y Y}
+\toprule 文献 & 主要机制 & 对当前问题的参考价值\\\midrule
+FACET，2025\cite{facet2025} & 虚拟质量--弹簧--阻尼参考，teacher--student，GRU & 可调动力学响应与隐状态估计\\
+Seeing-Eye Quadruped，2023\cite{defazio2023} & 监督学习估计外力，RL 保持行走，牵引指导导航 & 分开评估外力感知与运动执行\\
+Learning Force Control，2024\cite{portela2024} & 末端力跟踪 RL，历史观测估计特权状态 & 机械臂与腿的全身力控制\\
+Safe Whole-Body Loco-Manipulation，2026\cite{schperberg2026} & 腕部 F/T、显式导纳、腿部 RL、Reference Governor & 有力传感器时的模块化实现\\
+Residual RL，2018 预印本\cite{johannink2018} & 已有控制器与学习残差叠加 & 明确残差的作用层级与职责\\\bottomrule
+\end{tabularx}
+\caption{选取的相近原始研究。年份采用参考文献中列出的版本。平台、传感器和任务差异应随对比实验一起记录。}
+\end{table}
+
+FACET 与目标最接近，使用动力学模型规定受力响应。Seeing-Eye 工作更侧重牵引方向的识别与导航，其导航目标和完整质量--阻尼响应的评价对象有差异。Portela 等的工作面向带机械臂的全身末端力控制，可补足当前质心牵引任务到手腕交互之间的能力需求。Schperberg 等的工作提供显式导纳与运动 RL 的组合路线，需要腕部力/力矩传感器。Residual RL 提供方法结构参考，原论文的装配实验和当前四足场景需分别验证。\cite{facet2025,defazio2023,portela2024,schperberg2026,johannink2018}

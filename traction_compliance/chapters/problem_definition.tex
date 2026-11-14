@@ -1,0 +1,39 @@
+\section{问题定义}
+\subsection{任务目标与系统边界}
+人在机器人手腕、把手或机身施加牵引，希望机器人沿牵引方向平稳移动、适当转向，松手后逐渐回到原始速度指令，并通过虚拟质量、转动惯量和阻尼调节响应。完整的全身任务还要求手臂、机身与支撑腿协调，满足关节、接触和工作空间约束。
+
+当前代码实现的验证对象是 12 关节四足机器人上的机身牵引任务。外力施加在 base 刚体质心，控制接口为平面速度 $(v_x,v_y,\omega_z)$，当前实现覆盖四足行走与机身响应。手腕作用点、机械臂自由度和末端工作空间属于扩展任务，需要额外建模。\ev{C1,C7}
+
+定义原始速度指令 $\bm c^0_t\in\R^3$、速度修正 $\bm\delta_t\in\R^3$、合成指令
+\begin{equation}
+\bm c_t=\bm c^0_t+\bm\delta_t.
+\label{eq:compose}
+\end{equation}
+$\bm\delta_t$ 的前两项单位为 $\mathrm{m/s}$，第三项为 $\mathrm{rad/s}$。固定采样间隔下，指令速度变化率为 $(\bm c_t-\bm c_{t-1})/\Delta t$。持续输出 $\delta_x=1.2$ 表示持续的速度偏移，只有相邻时刻速度的差再除以 $\Delta t$ 才对应变化率。
+
+若牵引发生在距机身参考点 $\bm r$ 的手腕位置，将测得的力/力矩变换到统一坐标系后，应使用
+\begin{equation}
+\bm w_h=[F_x,F_y,\tau_z]^\top,
+\qquad \tau_z=(\bm r\times\bm F)_z+\tau_{h,z}.
+\label{eq:wrench}
+\end{equation}
+绕竖直轴的力矩与水平力的方向角承担不同控制含义。当前代码用方向角生成转向指令，式~\eqref{eq:wrench} 则描述物理作用点引起的力矩。
+
+\subsection{希望学习的动力学关系}
+在固定局部平面坐标系内，将期望修正状态记为 $\bm\delta_{\rm ref}$，质量--阻尼目标可写为
+\begin{equation}
+\underbrace{\operatorname{diag}(m_x,m_y,J_z)}_{\bm M}
+\dot{\bm\delta}_{\rm ref}
++\underbrace{\operatorname{diag}(d_x,d_y,d_\psi)}_{\bm D}
+\bm\delta_{\rm ref}=\bm w_h,
+\qquad \bm M\succ0,\ \bm D\succ0.
+\label{eq:admittance}
+\end{equation}
+平移质量的单位为 kg，平移阻尼为 $\mathrm{N\,s/m}$，转动惯量为 $\mathrm{kg\,m^2}$。恒力下稳态修正为 $\bm D^{-1}\bm w_h$，单轴响应时间常数为 $m/d$。这样，力幅值、稳态速度与响应快慢具有可解释关系。若需要松手后回到指定位置，可增加位置状态和刚度项 $\bm K(\bm x-\bm x_0)$。
+
+大角度转向时，应在世界系积分平移状态，再变换到机身系下发指令，或显式处理旋转坐标系的导数项。直接在持续旋转的机身系使用式~\eqref{eq:admittance}，属于小转角近似。
+
+\subsection{观测条件与学习问题}
+部署时可获得本体传感信息、历史动作与用户指令，真实外力可能不可测。可用历史 $h_t=(o_t,\ldots,o_{t-H+1})$ 形成部分可观测控制问题。若有腕部六维力传感器，外力可经补偿、滤波后直接进入参考模型。若无力传感器，则需要从运动响应中估计外力或相关隐状态。
+
+目标应同时包含实际响应对式~\eqref{eq:admittance} 的一致性、行走稳定性、松手恢复、交互冲击和部署开销。参考指令的回归误差只能度量其中一部分。训练中可以使用仿真真值作为标签和 critic 输入，部署 actor 的输入需由实际传感器产生。

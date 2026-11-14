@@ -1,0 +1,102 @@
+\section{参考代码中的当前解决方案}
+\subsection{环境、网络与训练参数归属}
+训练入口为 \code{scripts/reinforcement_learning/traction/train_frozen_latent.py}。
+任务 \code{Cerebrix-Traction-Rough-Vita01evt-v1} 继承现有 rough 地形、机器人、动作处理和域随机化配置。牵引模块接管外力，采用 $0.005\,\mathrm{s}$ 物理步长、每个控制周期 4 个物理步，即 $50\,\mathrm{Hz}$ 控制。力幅值按全局 200 控制步周期更新，周期内 phase 大于 150 时清零。\ev{C1,C7}
+
+\begin{table}[htbp]\centering\small
+\begin{tabularx}{\linewidth}{P{32mm}YP{23mm}}
+\toprule 模块 & 输入与输出 & 训练状态\\\midrule
+冻结 CTS 编码器 & $270$ 维历史 $h_t\mapsto z_t\in\R^{32}$ & 冻结\\
+冻结运动 actor & 当前观测与编码特征 $\mapsto12$ 维关节动作 & 冻结\\
+速度修正 MLP & $[o_t,z_t,\mathrm{cmd\_ori}_t]\in\R^{83}\mapsto\bm\mu_t\in\R^3$ & PPO 更新\\
+修正分布标准差 & 独立于状态的三维可学习参数 & PPO 更新\\
+奖励 critic & $249\to512\to256\to128\to1$ & 价值回归\\
+约束 critic & $249\to512\to256\to128\to3$，末端 Softplus & 代价价值回归\\\bottomrule
+\end{tabularx}
+\caption{当前 H6 牵引配方的模块分工。底座冻结仍可在训练时使用归档标准差采样关节动作。}
+\end{table}
+
+修正 MLP 结构为 $83\to256\to128\to3$，两个隐藏层使用 ELU。当前 teacher-aligned 配方使用默认 Linear 初始化和初始修正标准差 $1.0$，训练时采样修正与底座关节动作，推理时使用均值。代码中的 teacher-aligned 命名描述其参考训练机制，当前网络复用冻结 CTS 特征，独立 GRU 外力估计器属于后文讨论的研究方案。\ev{C2,C3}
+
+每帧 $45$ 维观测按顺序包含合成指令 3 维、角速度 3 维、重力投影 3 维、关节位置偏差 12 维、关节速度 12 维、上一关节动作 12 维。六帧按最新帧在前拼接为 270 维历史。令 $S=\operatorname{diag}(2,2,0.25)$，常规连续运行时
+\begin{equation}
+ o_t[0{:}3]=S(\bm c^0_t+\bm\delta_{t-1}),\qquad
+ \mathrm{cmd\_ori}_t=[S\bm c^0_t,\ S\bm\delta_{t-1}].
+\label{eq:redundant}
+\end{equation}
+重置边界的历史填充与终止观测由 wrapper 单独处理。\ev{C4}
+
+\subsection{从外力到参考修正的精确映射}
+将力表达在机身坐标系，定义带阈值和限幅的函数
+\begin{equation}
+ g(F;l,u)=\begin{cases}
+ 0,& |F|\le\alpha,\\
+ \clip\left(\dfrac{F+\alpha\sgn(F)}{\beta},l,u\right),&|F|>\alpha.
+ \end{cases}
+\end{equation}
+当前 baseline 的 $\alpha=17.5\,\mathrm N$、$\beta=20\,\mathrm{N\,s/m}$，因此
+\begin{equation}
+ \delta_{x,\rm ref}=g(F_x;-0.5,1.2),\qquad
+ \delta_{y,\rm ref}=g(F_y;-0.5,0.5).
+\label{eq:force-map}
+\end{equation}
+该式直接输出速度修正。它包含零区、符号偏置和限幅，当前参考值由当时的力幅值代数计算。\ev{C3,C5}
+
+转向由 $\theta=\operatorname{atan2}(F_y,F_x)$ 决定，单位为 rad。
+\begin{equation}
+ \delta_{\omega,\rm ref}=\begin{cases}
+ \clip\left(\dfrac{\theta+0.6\sgn(\theta)}{2},-0.8,0.8\right),
+ &\|\bm F_{xy}\|>17.5\ \text{且}\ |\theta|>0.6,\\
+ 0,&\text{其余情况}.
+ \end{cases}
+\end{equation}
+其值域为 $\{0\}\cup[-0.8,-0.6)\cup(0.6,0.8]$。各分量依赖同一股力，取值组合受到方向约束。\ev{C5}
+
+\begin{table}[htbp]\centering
+\begin{tabular}{rrrrl}
+\toprule $F_x$ (N)&$F_y$ (N)&$\delta_{x,\rm ref}$&$\delta_{y,\rm ref}$&$\delta_{\omega,\rm ref}$\\\midrule
+0&0&0&0&0\\
+10&0&0&0&0\\
+18&0&1.2&0&0\\
+50&0&1.2&0&0\\
+20&20&1.2&0.5&0.693\\
+13&13&0&0&0.693\\
+-20&-5&-0.5&0&-0.8\\\bottomrule
+\end{tabular}
+\caption{直接按代码公式计算的参考值。平移单位为 m/s，转向单位为 rad/s。}
+\end{table}
+
+\subsection{奖励、时序与 PPO 更新}
+以 $\bm\delta_t$ 表示本帧采样输出经动作限幅和死区后的修正。代码将下面一项命名为 \code{compliance}，其数学作用是参考修正跟踪，属于任务奖励。在乘整体权重前为
+\begin{equation}
+ r_{\rm comp,t}=-\left[(\delta_{x,t}-\delta_{x,\rm ref})^2
+ +(\delta_{y,t}-\delta_{y,\rm ref})^2
+ +0.05(\delta_{\omega,t}-\delta_{\omega,\rm ref})^2\right].
+\label{eq:comp}
+\end{equation}
+
+\textbf{任务跟踪、平滑性与柔顺性。}式~\eqref{eq:comp} 比较同一时刻的输出与参考，直接度量任务误差。若需要限制相邻时刻的修正跳变，可另外设计平滑性奖励，例如固定采样周期下
+\begin{equation}
+ r_{\rm smooth,t}=-\|W_s(\bm\delta_t-\bm\delta_{t-1})\|^2,
+\end{equation}
+其中 $W_s$ 调整平移与转向的尺度。这是可选设计公式。单独最大化该项会允许始终输出零的解，此时运动底座仍可能抵抗牵引。柔顺性描述外力与实际运动的关系，可由式~\eqref{eq:admittance} 规定并评价。动态参考跟踪可以作为实现柔顺性的任务目标，其效果同时取决于参考模型和底座执行能力。当前 \code{compliance} 名称表达设计意图，三值参考的跟踪奖励本身仅保证对这些目标值的偏好。
+
+MLP 修正动作的限幅范围为 $[-0.5,1.3]\times[-0.5,0.5]\times[-1.5,1.5]$，平移范数和转向绝对值小于等于 $0.05$ 时分别归零。奖励参考的上限与动作本身的限幅各有独立参数。\ev{C5,C6}
+
+实际速度跟踪使用上一帧处理后的修正。记该步原始指令为 $\bm c^0_t$，则
+\begin{align}
+ r_{v,t}&=\exp\left(-\frac{\|\bm c^0_{xy,t}+\bm\delta_{xy,t-1}-\bm v_{xy,t}\|^2}{0.25}\right),\\
+ r_{\omega,t}&=\exp\left(-\frac{(c^0_{\omega,t}+\delta_{\omega,t-1}-\omega_{z,t})^2}{0.25}\right),\\
+ r_t&=\Delta t\left(5r_{\rm comp,t}+r_{v,t}+0.5r_{\omega,t}+\sum_j w_jr_{j,t}\right).
+\end{align}
+其他奖励包括姿态、机身高度、关节力矩、功率、动作平滑和碰撞等项。对 $F_x=18\,\mathrm N$，若 $\delta_x=0.8$ 且其他误差为零，则参考修正跟踪项贡献为 $-5(0.8-1.2)^2=-0.8$，乘 $\Delta t=0.02$ 后为 $-0.016$。\ev{C6}
+
+一步流程为观测历史、采样底座动作与修正、执行物理步、更新外力标签、计算奖励、把修正写入下一帧观测。因而式~\eqref{eq:comp} 检查本帧修正，运动跟踪检查上帧修正带来的响应。外力重新采样时，新标签可能尚未产生可观测的物理效应。\ev{C7,C8}
+
+PPO 通过交互轨迹、GAE 和 clipped surrogate 更新修正策略。令
+$\rho_t=\pi_\theta(u_t|h_t)/\pi_{\rm old}(u_t|h_t)$，其策略项为
+\begin{equation}
+ L_{\rm clip}=-\E\left[\min\big(\rho_t\hat A_t,
+ \clip(\rho_t,1-\epsilon,1+\epsilon)\hat A_t\big)\right].
+\end{equation}
+完整损失还包含奖励价值回归、代价价值回归、约束项与熵项。当前路径通过轨迹回报更新 actor，平方误差以式~\eqref{eq:comp} 的 reward 进入优势估计。底座参数由冻结与优化器归属检查约束。\ev{C8}\cite{schulman2017}

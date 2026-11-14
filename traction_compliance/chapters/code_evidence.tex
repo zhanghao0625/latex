@@ -1,0 +1,21 @@
+\section{代码证据索引与复核方式}
+下列路径相对于仓库根目录。代码链接固定到本文审阅提交，私有仓库的在线查看权限取决于读者账户。文件中的函数名同时提供本地定位入口。
+
+\small
+\begin{longtable}{P{9mm}P{96mm}P{37mm}}
+\toprule 编号 & 路径与定位 & 支持的结论\\\midrule\endhead
+C1 & \code{source/cerebrix/cerebrix/tasks/manager_based/traction/config/rough_env_cfg.py}；\code{agents/traction_cfg.py}（相对 config 目录） & 环境继承、外力接管、当前策略类\\
+C2 & \code{source/cerebrix/cerebrix/rl/traction/latent_adapter.py} 的 \code{FrozenLatentAdapter} 和 \code{command_mean}；\code{models.py} 的 \code{_mlp} & 83 维输入、层宽、ELU、critic\\
+C3 & \code{source/cerebrix/cerebrix/rl/traction/teacher_aligned.py} 和 \code{latent_mechanisms.py} & $1.2$ 上限、初始化、采样开关\\
+C4 & \code{source/cerebrix/cerebrix/rl/traction/isaac_adapter.py} 的 \code{_critic_obs}；\code{latent_isaac.py}；\code{deployment_contract.py}；\code{source/cerebrix/cerebrix/utils/wrappers/himloco/vecenv_wrapper.py} & 合成指令、缩放、观测顺序与反馈\\
+C5 & \code{source/cerebrix/cerebrix/rl/traction/tensors.py} 的 \code{source_force_to_velocity}、\code{source_process_command}；\code{reference/reward_methods.py} 的 \code{_get_force_to_vel} & 力映射与修正动作处理\\
+C6 & \code{source/cerebrix/cerebrix/rl/traction/reference/reward_methods.py}；\code{reward_scales.json}、\code{source_recipe_parameters.json}（同目录）；\code{isaac_rewards.py} & reward 公式、权重与 dt\\
+C7 & \code{source/cerebrix/cerebrix/rl/traction/source_force_v2.py}；\code{source_force_isaac_v2.py}；\code{control.py} & 质心施力、物理子步、标签更新\\
+C8 & \code{source/cerebrix/cerebrix/rl/traction/latent_runner.py}；\code{latent_ppo.py}；\code{latent_feedback.py} & 交互时序、PPO、无独立估计器更新\\
+C9 & \code{docs/experiments/vita01evt_go2_transfer/p13_h6_traction_5k_20261101.md} & H6 5k 配方与既有实验背景\\\bottomrule
+\end{longtable}
+\normalsize
+代码提交入口为
+\url{https://github.com/VitaDynamics/cerebrix/tree/57a05ee00d229da6fd6f10defcc51e947247d6c6}。
+
+复核顺序为检查 C3 的实际配方，沿 C4 核实输入和历史顺序，再对照 C5、C6 计算参考和 reward，最后用 C7、C8 对齐真实物理施力、标签与动作。图中映射由 \code{scripts/plot_reference.py} 按本文公式生成，可独立重建。本文将输入冗余的性能影响、MSE 与 PPO 的比较、动态参考和 GRU 的迁移收益保留为第 6 节的待验证假设。

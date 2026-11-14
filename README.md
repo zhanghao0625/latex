@@ -4,6 +4,8 @@
 
 包含问题定义、Cerebrix H6 代码分析、相关论文方案和评价协议。LaTeX 源码与参考文献位于 `traction_compliance/`。
 
+章节源码位于 [`traction_compliance/chapters/`](traction_compliance/chapters/)，包含 6 个正文章节和 1 个附录。各章采用英文文件名，所有 `.tex` 文件直接放在该目录下，由 `traction_compliance/main.tex` 统一加载和编译。
+
 ## 编译
 
 安装包含 CTeX/Fandol 字体的 XeLaTeX 与 latexmk，或安装 Tectonic，并将编译工具加入 `PATH`。在仓库根目录运行
