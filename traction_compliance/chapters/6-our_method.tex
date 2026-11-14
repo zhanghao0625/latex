@@ -1,0 +1,46 @@
+\section{我们的方法}
+
+\subsection{网络设计}
+冻结 H6 运动底座。状态估计 MLP 输入最近 6 帧观测，结构为 $270\to512\to256\to128\to9$，输出机身线速度、外力和外力矩各 3 维。三组输出分别与仿真标签计算归一化 MSE，加权求和后用独立优化器更新估计器。
+
+速度策略 MLP 拼接最新观测（45 维）与估计结果（9 维），结构为 $54\to256\to128\to64\to3$，输出前向、侧向和偏航速度。估计结果在拼接前截断梯度。输出经 H6 的限幅和死区处理后写入下一帧观测，供冻结底座执行。
+
+\subsection{训练环境与采样}
+\begin{itemize}
+  \item \textbf{地形与指令}\enspace 在粗糙地形中训练，原始速度指令固定为零，取消随机速度与目标航向采样。
+  \item \textbf{外力采样}\enspace 每段牵引开始时，在世界系对 $\bm F^w$ 的三个分量分别从 $[-40,40]\,\mathrm N$ 内独立均匀采样。
+  \item \textbf{施力方式}\enspace 作用点在 base link 系下为 $\bm r^b=(0.17287,0,0)\,\mathrm m$。世界系外力 $\bm F^w$ 的方向和大小保持至撤力。
+  \item \textbf{场景比例}\enspace 按训练控制帧计，无力帧占 $25\%$，涵盖起始静止和撤力后阶段。其余 $75\%$ 为均匀采样施力帧。
+  \item \textbf{监督标签}\enspace 每个控制步用机身姿态将实际施加的外力转到 base link 系，$\bm F_t^b=\bm R_{bw}(t)\bm F^w$，供监督和参考速度计算。以 base link 原点为参考点，由 $\bm\tau_t^b=\bm r^b\times\bm F_t^b$ 得到力矩。机身系线速度、外力和力矩标签均与历史观测对齐。
+\end{itemize}
+
+\subsection{由外力计算参考速度}
+固定弹簧刚度 $K_p=0$，平移采用质量--阻尼方程
+\begin{equation}
+ \bm M\dot{\bm v}_{xy,\rm ref}+\bm D\bm v_{xy,\rm ref}=\bm F_{xy,\rm eff},
+ \qquad
+ \bm F_{\rm eff}=
+ \begin{cases}
+ \bm 0, & \|\bm F^b\|_2<5\,\mathrm N,\\
+ \left(1-\dfrac{5\,\mathrm N}{\|\bm F^b\|_2}\right)\bm F^b, & \|\bm F^b\|_2\ge 5\,\mathrm N.
+ \end{cases}
+\end{equation}
+平移参考按式~\eqref{eq:exact} 逐轴更新，力阈值使用实际施加的三维牵引力大小，重力不计入。侧向牵引允许横移。
+
+偏航另设水平合力门槛。$\sqrt{(F_x^b)^2+(F_y^b)^2}<5\,\mathrm N$ 时，偏航参考为零。达到门槛后，根据水平牵引方向与机身正 $x$ 轴的夹角生成偏航参考，使两者对齐。接近正后方时保持已选的转向方向。质量、阻尼和偏航增益均作为配置参数。
+
+图~\ref{fig:traction-reference-map} 展示平移参考的稳态值和偏航对齐示例。平移在机身系力分量恒定时收敛到 $\bm D^{-1}\bm F_{xy,\rm eff}$，图中各速度均经过限幅和死区处理。
+
+\clearpage
+\noindent\begin{minipage}{\linewidth}
+\captionsetup{hypcap=false}
+\centering
+\includegraphics[width=0.84\linewidth]{figures/traction_reference_map.pdf}
+\captionof{figure}{纯牵引方案的外力与参考速度关系。取 $F_z^b=0$，示例阻尼 $D_x=D_y=20\,\mathrm{N\,s/m}$，偏航限幅前参考取 $0.5\,\mathrm{s}^{-1}$ 乘方向角。子图 (a)、(b) 为单轴施力时的稳态速度，阴影为 $5\,\mathrm N$ 力死区。子图 (c)、(d) 分别显示偏航参考在水平力平面中的分布及 $30\,\mathrm N$ 拉力下的角度曲线。灰色后方区域（$|\theta|\ge170^\circ$）标示转向方向由历史决定。}
+\label{fig:traction-reference-map}
+\end{minipage}\par
+
+\subsection{奖励设计}
+参考速度经与策略输出相同的限幅和死区处理，再按式~\eqref{eq:comp} 计算平方误差奖励。三维牵引力大小小于 $5\,\mathrm N$ 时，平移和偏航参考直接置零，同时清空参考动力学状态，奖励策略输出零速度。沿用 H6 基线的其他奖励项及权重，速度策略使用 PPO 更新。
+
+训练前先将实际牵引力生成的参考速度直接下发给冻结底座，检查响应、对齐和撤力后的停稳表现。单独评估估计器在无力及 $5\,\mathrm N$ 附近的误报和漏报，再用估计值训练速度策略。
