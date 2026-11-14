@@ -10,7 +10,7 @@
 
 本节对应 \code{--teacher_aligned} 的基线配方与 \code{source_v1} 采样。训练入口为 \code{train_frozen_latent.py}。\ev{C1,C3}
 
-\subsection{网络输入、输出与反馈}
+\subsection{网络设计}
 
 训练时的网络结构与反馈见图~\ref{fig:h6-network-feedback}。观测沿用式~\eqref{eq:proprio-observation} 和式~\eqref{eq:proprio-history}，
 取 $H=6$，关节动作项使用上一控制步的平滑动作。仿真机身线速度和力标签用于奖励与 Critic。\ev{C2,C4,C6}
@@ -97,7 +97,7 @@
 \label{fig:force-reference-map}
 \end{minipage}\par
 
-\subsection{奖励与约束}
+\subsection{奖励设计}
 
 \noindent\textbf{牵引任务}\quad
 \code{compliance} 比较本帧处理后的修正 $\bm\delta_t$ 与当前力标签生成的参考速度修正 $\bm\delta_{\rm ref,t}$。\ev{C6}
