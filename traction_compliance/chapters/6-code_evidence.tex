@@ -12,10 +12,11 @@ C5 & \code{source/cerebrix/cerebrix/rl/traction/tensors.py} 的 \code{source_for
 C6 & \code{source/cerebrix/cerebrix/rl/traction/reference/reward_methods.py}；\code{reward_scales.json}、\code{source_recipe_parameters.json}（同目录）；\code{isaac_rewards.py} & reward 公式、权重与 dt\\
 C7 & \code{source/cerebrix/cerebrix/rl/traction/source_force_v2.py}；\code{source_force_isaac_v2.py}；\code{control.py} & 质心施力、物理子步、标签更新\\
 C8 & \code{source/cerebrix/cerebrix/rl/traction/latent_runner.py}；\code{latent_ppo.py}；\code{latent_feedback.py} & 交互时序、PPO、无独立估计器更新\\
-C9 & \code{docs/experiments/vita01evt_go2_transfer/p13_h6_traction_5k_20261101.md} & H6 5k 配方与既有实验背景\\\bottomrule
+C9 & \code{docs/experiments/vita01evt_go2_transfer/p13_h6_traction_5k_20261101.md} & H6 5k 配方与既有实验背景\\
+C10 & \code{scripts/reinforcement_learning/traction/evaluate_frozen_latent.py}、\code{run_frozen_latent_long.py}（同目录）；\code{latent_pull_evaluation.py}、\code{latent_pose_evaluation.py}、\code{latent_evaluation.py}（相对 \code{rl/traction}） & 四足牵引协议与打分\\\bottomrule
 \end{longtable}
 \normalsize
 代码提交入口为
 \url{https://github.com/VitaDynamics/cerebrix/tree/57a05ee00d229da6fd6f10defcc51e947247d6c6}。
 
-复核顺序为检查 C3 的实际配方，沿 C4 核实输入和历史顺序，再对照 C5、C6 计算参考速度修正和 reward，最后用 C7、C8 对齐真实物理施力、标签与动作。图中映射由 \code{scripts/plot_reference.py} 直接调用 C5 的代码函数生成，同时与原始奖励映射及本文公式核对，可独立重建。本文将输入冗余的性能影响、MSE 与 PPO 的比较、动态参考速度修正和 GRU 的迁移收益保留为第 6 节的待验证假设。
+复核时可依次检查 C3 的配方、C4 的观测与反馈、C5 和 C6 的参考与奖励、C7 和 C8 的施力时序，以及 C10 的评估协议。力映射图可用 \code{scripts/plot_reference.py} 重建。
