@@ -8,6 +8,7 @@
 \usepackage[colorlinks=true,linkcolor=teal,citecolor=teal,urlcolor=teal,bookmarksnumbered=true]{hyperref}
 \definecolor{ink}{HTML}{16324F}
 \ctexset{section={format=\Large\bfseries\color{ink}},subsection={format=\large\bfseries}}
+\AddToHook{cmd/section/before}{\clearpage}
 \pagestyle{fancy}\fancyhf{}
 \fancyhead[L]{\small 牵引引导与全身柔顺控制}
 \fancyhead[R]{\small 代码分析与研究方案}

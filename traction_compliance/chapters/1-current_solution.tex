@@ -1,10 +1,18 @@
 \section{参考代码中的当前方案}
 
-H6 牵引训练在冻结的运动控制模型上增加速度修正 MLP。本节对应 \code{--teacher_aligned} 的基线配方与 \code{source_v1} 采样。训练入口为 \code{train_frozen_latent.py}。\ev{C1,C3}
+\begin{itemize}
+  \item \textbf{网络结构}\enspace H6 牵引训练在冻结的运动控制模型上增加速度修正 MLP。
+  \item \textbf{网络输出}\enspace MLP 根据本体观测、历史特征和指令反馈，每帧直接输出前向、侧向和偏航速度修正的均值。训练将处理后的修正叠加到下一帧的原始指令。\ev{C2,C4}
+  \item \textbf{训练参考}\enspace 平移参考修正在各轴的力分量越过阈值后立即饱和，偏航参考随拉力方向变化。奖励以速度修正误差为目标，未规定加速度或起步过渡曲线。\ev{C5,C6}
+  \item \textbf{撤力响应}\enspace 撤力使参考修正归零，奖励鼓励 MLP 消除残余修正。原始指令也为零时，期望机器人停车。当前训练缺少显式停车约束。\ev{C5,C6,C7}
+  \item \textbf{部署指令}\enspace H6 v2 优先采用摇杆或 Follow 外部指令。外部指令幅值连续 $0.4\,\mathrm{s}$ 低于 $0.1$ 后，切换到 C++ 后处理后的网络速度输出。\href{https://github.com/VitaDynamics/cerebrix/blob/57a05ee00d229da6fd6f10defcc51e947247d6c6/source/cerebrix/cerebrix/rl/traction/contracts/deployment_h6_v2/deployment_contract.json\#L57}{部署契约}
+\end{itemize}
+
+本节对应 \code{--teacher_aligned} 的基线配方与 \code{source_v1} 采样。训练入口为 \code{train_frozen_latent.py}。\ev{C1,C3}
 
 \subsection{网络输入、输出与反馈}
 
-网络结构与反馈时序见图~\ref{fig:h6-network-feedback}。观测沿用式~\eqref{eq:proprio-observation} 和式~\eqref{eq:proprio-history}，
+训练时的网络结构与反馈见图~\ref{fig:h6-network-feedback}。观测沿用式~\eqref{eq:proprio-observation} 和式~\eqref{eq:proprio-history}，
 取 $H=6$，关节动作项使用上一控制步的平滑动作。仿真机身线速度和力标签用于奖励与 Critic。\ev{C2,C4,C6}
 
 \begin{itemize}
@@ -27,6 +35,7 @@ H6 牵引训练在冻结的运动控制模型上增加速度修正 MLP。本节�
 \label{fig:h6-network-feedback}
 \end{figure}
 
+\clearpage
 \subsection{训练环境与采样}
 
 \noindent\textbf{外力采样与施加}\ev{C7}
@@ -52,15 +61,6 @@ H6 牵引训练在冻结的运动控制模型上增加速度修正 MLP。本节�
 \end{itemize}
 
 \subsection{由外力计算参考速度修正}
-
-\begin{figure}[!htbp]
-\centering
-\includegraphics[width=0.92\linewidth]{figures/reference_map.pdf}
-\caption{外力与参考速度修正的关系。参数采用 H6 基线。子图 (a)、(b) 为前向、侧向映射；(c) 为偏航参考速度修正在水平力平面中的分布；(d) 为水平拉力大小固定为 $30\,\mathrm N$ 时，偏航参考速度修正随拉力方向的变化。实心点表示阈值处取值，空心点表示非零分支的极限，阴影表示死区。}
-\label{fig:force-reference-map}
-\end{figure}
-
-\clearpage
 
 取机身坐标系下的水平力 $\bm F_{xy}=(F_x,F_y)$。平移参考速度修正通过下式计算
 \begin{equation}
@@ -89,9 +89,17 @@ H6 牵引训练在冻结的运动控制模型上增加速度修正 MLP。本节�
 
 图~\ref{fig:force-reference-map} 直接调用 \code{source_force_to_velocity} 计算，并与原始奖励映射函数 \code{_get_force_to_vel} 逐点核对。平移分量越过 $17.5\,\mathrm N$ 阈值后立即饱和；偏航分量同时受水平力幅值和方向角控制。\ev{C3,C5}
 
+\noindent\begin{minipage}{\linewidth}
+\captionsetup{hypcap=false}
+\centering
+\includegraphics[width=0.84\linewidth]{figures/reference_map.pdf}
+\captionof{figure}{外力与参考速度修正的关系。参数采用 H6 基线。子图 (a)、(b) 为前向、侧向映射；(c) 为偏航参考速度修正在水平力平面中的分布；(d) 为水平拉力大小固定为 $30\,\mathrm N$ 时，偏航参考速度修正随拉力方向的变化。实心点表示阈值处取值，空心点表示非零分支的极限，阴影表示死区。}
+\label{fig:force-reference-map}
+\end{minipage}\par
+
 \subsection{奖励与约束}
 
-\noindent\textbf{参考速度修正跟踪}\quad
+\noindent\textbf{牵引任务}\quad
 \code{compliance} 比较本帧处理后的修正 $\bm\delta_t$ 与当前力标签生成的参考速度修正 $\bm\delta_{\rm ref,t}$。\ev{C6}
 \begin{equation}
  r_{\rm comp,t}=-\|\bm\delta_{xy,t}-\bm\delta_{xy,\rm ref,t}\|^2
@@ -99,13 +107,13 @@ H6 牵引训练在冻结的运动控制模型上增加速度修正 MLP。本节�
 \label{eq:comp}
 \end{equation}
 
-\noindent\textbf{实际运动跟踪}\quad
-奖励跟踪目标为 $\bm c_{\rm trk,t}=\bm c^{0,\rm rew}_t+\bm\delta_{t-1}$。其中 $\bm c^{0,\rm rew}_t$ 是物理步结束后更新的原始指令，$\bm v_{xy,t}$ 和 $\omega_{z,t}$ 是此时的仿真机身速度。\ev{C6,C7}
+\noindent\textbf{运动跟踪}\quad
+当前实现沿用底层运动跟踪奖励。跟踪目标为 $\bm c_{\rm trk,t}=\bm c^{0,\rm rew}_t+\bm\delta_{t-1}$，其中 $\bm c^{0,\rm rew}_t$ 是物理步结束后更新的原始指令，$\bm v_{xy,t}$ 和 $\omega_{z,t}$ 是此时的仿真机身速度。\ev{C6,C7}
 \begin{align}
  r_{v,t}&=\exp\left(-\frac{\|\bm c_{\rm trk,xy,t}-\bm v_{xy,t}\|^2}{0.25}\right),&
  r_{\omega,t}&=\exp\left(-\frac{(c_{\rm trk,\omega,t}-\omega_{z,t})^2}{0.25}\right).
 \end{align}
-上述三项权重依次为 $5$、$1$、$0.5$，与其他奖励加权求和后乘控制步长。物理步结束后更新力标签并计算奖励，新标签对应下一控制步排队施加的力。\ev{C6,C7}
+上述三项权重依次为 $5$、$1$、$0.5$，与其他奖励加权求和后乘控制步长。运动跟踪通过 PPO 回报影响牵引 MLP 学到的修正。物理步结束后更新力标签并计算奖励，新标签对应下一控制步排队施加的力。\ev{C6,C7,C8}
 
 \noindent\textbf{稳定性与 PPO}\quad
 其余奖励包含近零指令下的站姿、姿态、碰撞和关节动作平滑等。关节位置、力矩和速度限位作为三路约束代价。PPO 更新修正 MLP、采样标准差及奖励和代价 Critic，底座在牵引训练期间冻结。\ev{C6,C8}\cite{schulman2017}
