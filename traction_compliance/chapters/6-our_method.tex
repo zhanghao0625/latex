@@ -1,13 +1,14 @@
 \section{我们的方法}
+\label{sec:pure-traction}
 
-本节对应 \code{vbot} 的 \code{dev1-pure-traction} 分支，代码提交为 \code{1810875}。在 Vita01evt 粗糙地形仿真中冻结 Policy8 运动底座，训练状态估计器与速度策略。速度策略直接生成前向、侧向和偏航指令。
+本节对应 \code{vbot} 的 \code{dev1-pure-traction} 分支，提交为 \code{1810875}。纯牵引方案训练状态估计器和速度策略，直接生成前向、侧向和偏航速度指令。\ev{C14}
 
 \subsection{网络设计}
 网络层宽与反馈路径见图~\ref{fig:pure-traction-network}。
 \begin{itemize}
   \item \textbf{状态估计器}\enspace 用最近 6 帧本体观测（270 维）估计机身线速度、外力和力矩（归一化，各 3 维）。
   \item \textbf{速度策略}\enspace 最新观测、估计量与 $(D,\tau)$ 组成 $45+9+2=56$ 维输入。参数归一化至 $[-1,1]$，估计量截断梯度。
-  \item \textbf{原始指令}\enspace 训练时从对角高斯分布采样 $\bm u_t$，评估与部署时取均值。
+  \item \textbf{策略原始输出}\enspace 训练时从对角高斯分布采样 $\bm u_t$，评估与部署时取均值。
   \item \textbf{指令后处理}\enspace $\mathcal P$ 先按前向 $[-0.5,1.3]$、侧向 $[-0.5,0.5]$（$\mathrm{m/s}$）和偏航 $[-1.5,1.5]$（$\mathrm{rad/s}$）限幅。平移范数 $\le 0.05\,\mathrm{m/s}$ 或偏航绝对值 $\le 0.05\,\mathrm{rad/s}$ 时清零对应分量。
   \item \textbf{下一帧反馈}\enspace Policy8 使用当前观测中的 $\bm c_t$。本步输出 $\bm c_{t+1}=\mathcal P(\bm u_t)$ 按图中的 $S$ 缩放后写入下一帧。
 \end{itemize}
@@ -26,7 +27,7 @@
   \item \textbf{施力时序}\enspace 弱力和常规牵引回合默认每 $10\,\mathrm{s}$ 重采一次世界系外力，保持 $7\,\mathrm{s}$，再清零 $3\,\mathrm{s}$。
   \item \textbf{弱力采样}\enspace 幅值均匀采自 $[0,10)\,\mathrm N$，方向在单位球面均匀采样。
   \item \textbf{常规牵引采样}\enspace 三个世界系力分量独立均匀采自 $[-40,40)\,\mathrm N$。
-  \item \textbf{施力方式}\enspace 作用点 $\bm r^b$ 在机身原点前方 $0.17287\,\mathrm m$。外力转为机身系 $\bm F_t^b=\bm R_{bw}(t)\bm F_t^w$ 后，在质心施加该力和力矩 $(\bm r^b-\bm r_{\rm CoM}^b)\times\bm F_t^b$。其中 $\bm r_{\rm CoM}^b$ 为机身原点至质心的向量。
+  \item \textbf{施力方式}\enspace 作用点 $\bm r^b$ 在机身原点前方 $0.17287\,\mathrm m$。按式~\eqref{eq:force-transform} 将外力转为机身系 $\bm F_t^b$，在质心施加该力和力矩 $(\bm r^b-\bm r_{\rm CoM}^b)\times\bm F_t^b$。其中 $\bm r_{\rm CoM}^b$ 为机身原点至质心的向量。\ev{C12}
   \item \textbf{监督标签}\enspace 使用机身系线速度、外力 $\bm F_t^b$ 和关于机身原点的力矩 $\bm r^b\times\bm F_t^b$。力标签和参考速度均由生成当前观测的控制段所施加的外力更新。
 \end{itemize}
 
@@ -44,7 +45,8 @@
 \end{itemize}
 
 \subsubsection{平移参考速度}
-纯牵引取 $K=0$，取消对平衡位置的恢复力。令 $v=\dot x$，则 $M\dot v+Dv=F$。恒力下速度趋于 $F/D$，响应的时间常数为 $\tau=M/D$。两个平移轴共用 $D$ 和 $M=D\tau$。训练时按回合独立均匀采样 $D\in[15,30]\,\mathrm{N\,s/m}$ 和 $\tau\in[0.3,0.8]\,\mathrm s$。标准评估默认取 $D=20\,\mathrm{N\,s/m}$、$\tau=0.5\,\mathrm s$，对应 $M=10\,\mathrm{kg}$。
+\label{subsec:planar-reference}
+纯牵引取 $K=0$，取消位置恢复力。令 $v=\dot x$，则 $M\dot v+Dv=F$。恒定有效拉力下，限幅前的参考速度趋于 $F/D$，时间常数为 $\tau=M/D$。两个平移轴共用 $D$ 和 $M=D\tau$。训练时按回合独立均匀采样 $D\in[15,30]\,\mathrm{N\,s/m}$ 和 $\tau\in[0.3,0.8]\,\mathrm s$。标准评估默认取 $D=20\,\mathrm{N\,s/m}$、$\tau=0.5\,\mathrm s$，对应 $M=10\,\mathrm{kg}$。\ev{C11,C15}
 
 令 $\rho_t=\|\bm F_t^w\|_2$、$F_0=5\,\mathrm N$，以施加的三维外力幅值判定力阈值。有效平移力为
 \begin{equation}
@@ -65,7 +67,7 @@
 
 \begin{samepage}
 \subsubsection{偏航参考速度}
-三维合力与机身系水平力均达到 $5\,\mathrm N$ 时启用偏航参考。水平力方向角为 $\theta_t=\operatorname{atan2}(F^b_{y,t},F^b_{x,t})$。默认偏航增益 $0.5\,\mathrm{s}^{-1}$ 乘以有符号的转向角误差，得到限幅前的偏航速度 $\omega^{*}_{z,t}$。通常选最短转向。当 $|\theta_t|\ge170^\circ$ 且已有转向选择时沿用该方向，必要时按 $2\pi-|\theta_t|$ 计算转角。最后用 $\mathcal P$ 处理平移与偏航，得到参考指令 $\bm c_{{\rm ref},t}$。图~\ref{fig:traction-reference-map} 给出稳态示例。
+三维合力与机身系水平力均达到 $5\,\mathrm N$ 时启用偏航参考。水平力方向角为 $\theta_t=\operatorname{atan2}(F^b_{y,t},F^b_{x,t})$。默认偏航增益 $0.5\,\mathrm{s}^{-1}$ 乘以有符号的转向角误差，得到限幅前的偏航速度 $\omega^{*}_{z,t}$。通常选最短转向。当 $|\theta_t|\ge170^\circ$ 且已有转向选择时沿用该方向，必要时按 $2\pi-|\theta_t|$ 计算转角。最后用 $\mathcal P$ 处理平移与偏航，得到参考指令 $\bm c_{{\rm ref},t}$。图~\ref{fig:traction-reference-map} 给出稳态示例。\ev{C15}
 \par
 \end{samepage}
 
@@ -78,7 +80,7 @@
 
 \begin{samepage}
 \subsection{奖励设计}
-令 $g_t=\mathbf 1_{\{\rho_t\ge F_0\}}$ 为当前观测对应的牵引标记，$\bm e_t=\bm u_t-\bm c_{{\rm ref},t}$ 为原始指令误差，$\bm d_t=\bm v_t-\bm c_t$ 为步末实际机身速度对本步执行指令的误差。下标 $xy$ 和 $\omega$ 分别表示平移与偏航，$\bm a_t$ 为平滑后的关节动作。单步奖励为 $\Delta t\sum_i w_i r_{i,t}$，各项 $r_{i,t}$ 见表~\ref{tab:pure-traction-rewards}。
+令 $g_t=\mathbf 1_{\{\rho_t\ge F_0\}}$ 为当前观测对应的牵引标记，$\bm e_t=\bm u_t-\bm c_{{\rm ref},t}$ 为策略原始输出与参考指令的误差，$\bm d_t=\bm v_t-\bm c_t$ 为步末实际机身速度对本步执行指令的误差。下标 $xy$ 和 $\omega$ 分别表示平移与偏航，$\tilde{\bm a}_t$ 为平滑后的关节动作。单步奖励为 $\Delta t\sum_i w_i r_{i,t}$，各项 $r_{i,t}$ 见表~\ref{tab:pure-traction-rewards}。\ev{C12,C13}
 
 \par\nobreak\medskip\noindent
 \begin{minipage}{\linewidth}
@@ -94,8 +96,8 @@
 \code{zero_command_yaw} & $(1-g_t)u_{\omega,t}^2$ & $-4$ \\
 \code{tracking_lin_vel} & $\exp(-\|\bm d_{xy,t}\|_2^2/0.25)$ & $1$ \\
 \code{tracking_ang_vel} & $\exp(-d_{\omega,t}^2/0.25)$ & $0.5$ \\
-\code{action_rate} & $\|\bm a_t-\bm a_{t-1}\|_2^2$ & $-0.01$ \\
-\code{smoothness} & $\|\bm a_t-2\bm a_{t-1}+\bm a_{t-2}\|_2^2$ & $-0.01$ \\
+\code{action_rate} & $\|\tilde{\bm a}_t-\tilde{\bm a}_{t-1}\|_2^2$ & $-0.01$ \\
+\code{smoothness} & $\|\tilde{\bm a}_t-2\tilde{\bm a}_{t-1}+\tilde{\bm a}_{t-2}\|_2^2$ & $-0.01$ \\
 \code{mlp_action_rate} & $\|\bm u_t-\bm u_{t-1}\|_2^2$ & $-0.01$ \\
 \bottomrule
 \end{tabularx}
@@ -108,4 +110,4 @@
 训练默认使用 4096 个环境，每轮采集 24 个控制步。先用带约束代价的 PPO 更新速度策略与价值网络，再用同一批轨迹的观测和仿真标签更新估计器。PPO 的折扣系数、GAE 系数和裁剪幅度分别为 $0.99$、$0.95$ 和 $0.2$。估计损失对线速度、外力和力矩分别计算归一化 MSE 后加权求和。三组标签尺度为 $(1,40,7)$，权重默认为 $(1,1,1)$。两套 Adam 优化器的默认学习率均为 $10^{-3}$。
 
 \subsection{评估与部署接口}
-评估用 \code{learned} 模式执行学习到的速度指令，用 \code{reference} 模式直接执行真值外力生成的参考指令，均沿用相同的冻结底座和控制时序。导出的 ONNX 接收 270 维观测历史及物理单位下的 $(D,\tau)$，输出 12 维关节动作、3 维原始速度指令和恢复至物理单位的 9 维状态估计。控制侧按前述限幅、死区与缩放规则将速度指令写入下一帧观测。
+仿真评估模式见第~\ref{sec:evaluation} 节。部署用的 ONNX 接收 270 维观测历史和物理单位下的 $(D,\tau)$，输出 12 维关节动作、3 维策略速度均值 $\bm u_t$ 和恢复至物理单位的 9 维状态估计。控制侧按前述限幅、死区与缩放规则更新下一帧观测。\ev{C14}

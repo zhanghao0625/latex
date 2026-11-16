@@ -245,11 +245,11 @@ def main():
         decay = np.exp(-damping*dt/mass)
         for k in range(len(t)-1):
             reference_t[k+1] = decay*reference_t[k] + (1-decay)*force_t[k]/damping
-        current = evaluate(np.column_stack([force_t, np.zeros_like(t), np.zeros_like(t)]))[:, 0]
+        baseline = evaluate(np.column_stack([force_t, np.zeros_like(t), np.zeros_like(t)]))[:, 0]
         fig, ax = plt.subplots(figsize=(10, 3), layout="constrained")
-        ax.step(t, current, where="post", lw=2, color=ORANGE, label="当前代数参考速度修正")
-        ax.plot(t, reference_t, lw=2, color=TEAL, label="质量--阻尼参考速度修正")
-        ax.set(xlabel="时间 (s)", ylabel="参考速度修正 (m/s)", xlim=(0, 6))
+        ax.step(t, baseline, where="post", lw=2, color=ORANGE, label="旧版 H6 代数参考")
+        ax.plot(t, reference_t, lw=2, color=TEAL, label="理想质量--阻尼参考")
+        ax.set(xlabel="时间 (s)", ylabel="前向参考量 (m/s)", xlim=(0, 6))
         ax.legend(frameon=False, loc="upper right")
         ax.grid(alpha=.15)
         fig.savefig(ROOT / "figures/reference_dynamics.pdf")

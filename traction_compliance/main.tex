@@ -21,21 +21,19 @@
 \newcommand{\R}{\mathbb{R}}
 \newcommand{\clip}{\operatorname{clip}}
 \newcommand{\sgn}{\operatorname{sign}}
-\newcommand{\E}{\mathbb{E}}
 \newcommand{\code}[1]{\texttt{\nolinkurl{#1}}}
 \newcommand{\ev}[1]{\textsuperscript{[代码 #1]}}
 \hypersetup{pdftitle={牵引引导与全身柔顺控制：当前实现分析、相关方法与评价协议},pdfauthor={zhanghao0625}}
 \title{\vspace{-12mm}\textbf{牵引引导与全身柔顺控制}\\[5pt]\Large 当前实现分析、相关方法与评价协议}
-\author{基于 Cerebrix H6 冻结底座牵引任务的技术分析}
+\author{旧版 H6 基线与纯牵引方案的技术分析}
 \date{2026 年 11 月 13 日}
 \begin{document}
 \maketitle
 \begin{abstract}
-本文将目标定义为机器人在外部牵引下呈现可调的质量--阻尼响应，并检查当前 H6 速度修正网络是否能够表达这一目标。当前方案冻结运动底座，训练一个 $83\!\to\!256\!\to\!128\!\to\!3$ 的 MLP，使用 PPO 学习三维速度指令修正。代码存在三维可重建的指令冗余，其性能影响需要消融实验验证。当前由外力计算的参考速度修正在平移方向立即饱和，前向参考速度修正仅取 $-0.5,0,1.2\,\mathrm{m/s}$，由此限制了奖励对连续力幅值响应的表达能力。本文给出逐项推导、相关文献方案、可实施的动态参考模型和评价协议。文中图表为公式计算或实验设计，性能结论以代码检查为限，待验证的算法收益均明确标注。
+本文研究外部速度指令为零时，四足机器人在牵引下的柔顺跟随与撤力停稳。旧版 H6 基线训练时对采样的速度指令叠加学习到的修正，平移参考修正一旦越过力阈值便立即饱和。当前纯牵引方案在冻结的 Policy8 底座上估计机身线速度、外力与力矩，并依据可调质量--阻尼参考训练策略直接生成速度指令。本文分析旧版基线的局限，说明纯牵引方案的网络、训练和部署方式，并按现有评分代码给出牵引响应、转正、速度跟随和停稳的评估协议。
 \end{abstract}
-\noindent\textbf{审阅范围}\quad 本地 \code{cts-moe-him} 仓库的干净提交
-\code{57a05ee00d229da6fd6f10defcc51e947247d6c6}。分析配方为
-\code{policy8_frozen_cts_teacher_aligned_v3} 的 \code{baseline}，对应现有 H6 牵引 5k 实验。其他 \code{alpha10}/\code{beta40} 配方会改变下文的离散化结论。文献检索截至文档日期，采用作者论文或官方项目页。本文未重新运行机器人训练或实机实验。
+\noindent\textbf{审阅范围}\quad 第~\ref{sec:h6-baseline} 至第~\ref{sec:h6-analysis} 节依据 \code{cts-moe-him} 的提交
+\code{57a05ee00d229da6fd6f10defcc51e947247d6c6}，分析 H6 牵引 5k 实验的 \code{policy8_frozen_cts_teacher_aligned_v3} 基线。第~\ref{sec:evaluation} 和第~\ref{sec:pure-traction} 节依据 \code{vbot} 的 \code{dev1-pure-traction} 分支，提交为 \code{1810875}。文中的动力学曲线为公式计算结果，评估协议依据代码检查整理。
 \clearpage
 \tableofcontents
 \newpage

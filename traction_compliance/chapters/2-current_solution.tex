@@ -1,19 +1,12 @@
 \section{参考代码中的当前方案}
+\label{sec:h6-baseline}
 
-\begin{itemize}
-  \item \textbf{网络结构}\enspace H6 牵引训练在冻结的运动控制模型上增加速度修正 MLP。
-  \item \textbf{网络输出}\enspace MLP 根据本体观测、历史特征和指令反馈，每帧直接输出前向、侧向和偏航速度修正的均值。训练将处理后的修正叠加到下一帧的原始指令。\ev{C2,C4}
-  \item \textbf{训练参考}\enspace 平移参考修正在各轴的力分量越过阈值后立即饱和，偏航参考随拉力方向变化。奖励以速度修正误差为目标，未规定加速度或起步过渡曲线。\ev{C5,C6}
-  \item \textbf{撤力响应}\enspace 撤力使参考修正归零，奖励鼓励 MLP 消除残余修正。原始指令也为零时，期望机器人停车。当前训练缺少显式停车约束。\ev{C5,C6,C7}
-  \item \textbf{部署指令}\enspace H6 v2 优先采用摇杆或 Follow 外部指令。外部指令幅值连续 $0.4\,\mathrm{s}$ 低于 $0.1$ 后，切换到 C++ 后处理后的网络速度输出。\href{https://github.com/VitaDynamics/cerebrix/blob/57a05ee00d229da6fd6f10defcc51e947247d6c6/source/cerebrix/cerebrix/rl/traction/contracts/deployment_h6_v2/deployment_contract.json\#L57}{部署契约}
-\end{itemize}
-
-本节对应 \code{--teacher_aligned} 的基线配方与 \code{source_v1} 采样。训练入口为 \code{train_frozen_latent.py}。\ev{C1,C3}
+本节描述旧版 H6 基线。训练时冻结运动底座，由速度修正 MLP 在采样的原始速度指令上叠加修正。训练入口为 \code{train_frozen_latent.py}，采用 \code{--teacher_aligned} 基线配方与 \code{source_v1} 采样。\ev{C1,C3}
 
 \subsection{网络设计}
 
 训练时的网络结构与反馈见图~\ref{fig:h6-network-feedback}。观测沿用式~\eqref{eq:proprio-observation} 和式~\eqref{eq:proprio-history}，
-取 $H=6$，关节动作项使用上一控制步的平滑动作。仿真机身线速度和力标签用于奖励与 Critic。\ev{C2,C4,C6}
+仿真机身线速度和力标签用于奖励与 Critic。\ev{C2,C4,C6}
 
 \begin{itemize}
   \item 前向、侧向、偏航修正的限幅依次为 $[-0.5,1.3]$、$[-0.5,0.5]$、$[-1.5,1.5]$。
@@ -34,6 +27,8 @@
 \caption{H6 速度修正网络的输入、输出与下一帧反馈。}
 \label{fig:h6-network-feedback}
 \end{figure}
+
+在本文关注的纯牵引部署场景中，外部原始速度指令 $\bm c_t^0$ 始终为零。进入牵引模式后，底座执行经 C++ 后处理的网络速度指令。\href{https://github.com/VitaDynamics/cerebrix/blob/57a05ee00d229da6fd6f10defcc51e947247d6c6/source/cerebrix/cerebrix/rl/traction/contracts/deployment_h6_v2/deployment_contract.json\#L57}{部署契约}
 
 \clearpage
 \subsection{训练环境与采样}
@@ -75,7 +70,7 @@
  \end{aligned}
 \label{eq:force-map}
 \end{equation}
-基线取 $\alpha=17.5\,\mathrm N$、$\beta=20\,\mathrm{N\,s/m}$。代码中的 $(F/\beta)(1+\alpha/|F|)$ 与式~\eqref{eq:force-map} 的非零分支等价。H6 \code{teacher_aligned} 基线将前向参考速度修正上限设为 $1.2\,\mathrm{m/s}$，原始配方的上限为 $1.0\,\mathrm{m/s}$。\ev{C3,C5}
+基线取 $\alpha=17.5\,\mathrm N$、$\beta=20\,\mathrm{N\,s/m}$。代码中的 $(F/\beta)(1+\alpha/|F|)$ 与式~\eqref{eq:force-map} 的非零分支等价。H6 \code{teacher_aligned} 基线的前向参考修正上限为 $1.2\,\mathrm{m/s}$，原始配方为 $1.0\,\mathrm{m/s}$。其他力阈值配方的饱和范围应按其参数计算。\ev{C3,C5}
 
 偏航参考速度修正由力的方向角 $\theta=\operatorname{atan2}(F_y,F_x)$ 决定
 \begin{equation}
@@ -87,7 +82,7 @@
 \end{equation}
 参考速度修正按当前力标签逐步计算，力标签清零时参考速度修正随即归零。\ev{C3,C5,C7}
 
-图~\ref{fig:force-reference-map} 直接调用 \code{source_force_to_velocity} 计算，并与原始奖励映射函数 \code{_get_force_to_vel} 逐点核对。平移分量越过 $17.5\,\mathrm N$ 阈值后立即饱和；偏航分量同时受水平力幅值和方向角控制。\ev{C3,C5}
+图~\ref{fig:force-reference-map} 调用 \code{source_force_to_velocity} 计算，并与原始奖励映射函数 \code{_get_force_to_vel} 逐点核对。\ev{C3,C5}
 
 \noindent\begin{minipage}{\linewidth}
 \captionsetup{hypcap=false}
@@ -108,7 +103,7 @@
 \end{equation}
 
 \noindent\textbf{运动跟踪}\quad
-当前实现沿用底层运动跟踪奖励。跟踪目标为 $\bm c_{\rm trk,t}=\bm c^{0,\rm rew}_t+\bm\delta_{t-1}$，其中 $\bm c^{0,\rm rew}_t$ 是物理步结束后更新的原始指令，$\bm v_{xy,t}$ 和 $\omega_{z,t}$ 是此时的仿真机身速度。\ev{C6,C7}
+旧版 H6 基线沿用底层运动跟踪奖励。跟踪目标为 $\bm c_{\rm trk,t}=\bm c^{0,\rm rew}_t+\bm\delta_{t-1}$，其中 $\bm c^{0,\rm rew}_t$ 是物理步结束后更新的原始指令，$\bm v_{xy,t}$ 和 $\omega_{z,t}$ 是此时的仿真机身速度。\ev{C6,C7}
 \begin{align}
  r_{v,t}&=\exp\left(-\frac{\|\bm c_{\rm trk,xy,t}-\bm v_{xy,t}\|^2}{0.25}\right),&
  r_{\omega,t}&=\exp\left(-\frac{(c_{\rm trk,\omega,t}-\omega_{z,t})^2}{0.25}\right).

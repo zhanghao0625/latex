@@ -21,34 +21,18 @@
 h_t=\left[\bm o_t,\;\bm o_{t-1},\;\ldots,\;\bm o_{t-H+1}\right]^\top\in\R^{45H}.
 \label{eq:proprio-history}
 \end{equation}
-网络输出为三维平面速度修正
-\begin{equation}
-\bm\delta_t=f_\theta(h_t)
-=[\Delta v_{x,t},\Delta v_{y,t},\Delta\omega_{z,t}]^\top\in\R^3.
-\label{eq:network-io}
-\end{equation}
-输出依次修正前向、侧向和偏航速度，并按式~\eqref{eq:compose} 与原始指令叠加。
-
-\begin{figure}[htbp]
-\centering
-\input{figures/diagrams/task_network_io}
-\caption{速度修正网络的任务层输入与输出。}
-\label{fig:network-io}
-\end{figure}
+两套方案均使用 $H=6$。前向、侧向和偏航是速度接口的三个分量。
+旧版 H6 的网络输出速度修正，纯牵引策略直接输出速度指令。
+各自的网络输入和反馈时序见第~\ref{sec:h6-baseline} 和第~\ref{sec:pure-traction} 节。
 
 \subsection{速度指令与牵引力转换}
 
-将速度修正 $\bm\delta_t\in\R^3$ 叠加到原始指令 $\bm c^0_t\in\R^3$，得到合成指令
-\begin{equation}
-\bm c_t=\bm c^0_t+\bm\delta_t.
-\label{eq:compose}
-\end{equation}
-平移与偏航分量的单位分别为 $\mathrm{m/s}$ 和 $\mathrm{rad/s}$。
+速度指令的平移分量采用 $\mathrm{m/s}$，偏航分量采用 $\mathrm{rad/s}$。
 
-若牵引力作用于机身\code{base_link}之外的点 $P$，则其在机身坐标系 $b$ 中的等效力与力矩为：
+牵引力作用于点 $P$ 时，将力转换到机身坐标系 $b$，并计算关于机身参考点的等效力矩。
 \begin{equation}
 \bm F^b=\bm R_{bs}\bm F^s,
 \qquad \bm\tau_{\rm eq}^b=\bm r_{bP}^b\times\bm F^b.
 \label{eq:force-transform}
 \end{equation}
-其中，$\bm R_{bs}$ 为从力的原表达坐标系 $s$ 到 $b$ 系的旋转矩阵，$\bm r_{bP}^b$ 为机身参考点指向 $P$ 的位矢（以 $b$ 系表示）。等效力矩由牵引力的力臂产生。
+其中 $\bm R_{bs}$ 将 $s$ 系向量旋转到 $b$ 系，$\bm r_{bP}^b$ 是机身参考点指向 $P$ 的位矢，以 $b$ 系表示。

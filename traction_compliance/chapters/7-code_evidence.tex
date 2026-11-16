@@ -1,10 +1,12 @@
 \section{代码证据索引与复核方式}
-下列路径相对于仓库根目录。代码链接固定到本文审阅提交，私有仓库的在线查看权限取决于读者账户。文件中的函数名同时提供本地定位入口。
+下列路径相对于各自的仓库根目录。旧版 H6 基线对应 \code{cts-moe-him} 的提交 \code{57a05ee00d229da6fd6f10defcc51e947247d6c6}，纯牵引方案对应 \code{vbot} 的提交 \code{1810875}。
 
 \small
 \begin{longtable}{P{9mm}P{96mm}P{37mm}}
 \toprule 编号 & 路径与定位 & 支持的结论\\\midrule\endhead
-C1 & \code{source/cerebrix/cerebrix/tasks/manager_based/traction/config/rough_env_cfg.py}；\code{agents/traction_cfg.py}（相对 config 目录） & 环境继承、外力接管、当前策略类\\
+\bottomrule\endlastfoot
+\multicolumn{3}{l}{\textbf{旧版 H6 基线}}\\*
+C1 & \code{source/cerebrix/cerebrix/tasks/manager_based/traction/config/rough_env_cfg.py}；\code{agents/traction_cfg.py}（相对 config 目录） & 环境继承、外力接管、基线策略类\\
 C2 & \code{source/cerebrix/cerebrix/rl/traction/latent_adapter.py} 的 \code{FrozenLatentAdapter} 和 \code{command_mean}；\code{models.py} 的 \code{_mlp} & 83 维输入、层宽、ELU、critic\\
 C3 & \code{source/cerebrix/cerebrix/rl/traction/teacher_aligned.py} 和 \code{latent_mechanisms.py} & $1.2$ 上限、初始化、采样开关\\
 C4 & \code{source/cerebrix/cerebrix/rl/traction/isaac_adapter.py} 的 \code{_critic_obs}；\code{latent_isaac.py}；\code{deployment_contract.py}；\code{source/cerebrix/cerebrix/utils/wrappers/himloco/vecenv_wrapper.py} & 合成指令、缩放、观测顺序与反馈\\
@@ -13,10 +15,17 @@ C6 & \code{source/cerebrix/cerebrix/rl/traction/reference/reward_methods.py}；\
 C7 & \code{source/cerebrix/cerebrix/rl/traction/source_force_v2.py}；\code{source_force_isaac_v2.py}；\code{control.py} & 质心施力、物理子步、标签更新\\
 C8 & \code{source/cerebrix/cerebrix/rl/traction/latent_runner.py}；\code{latent_ppo.py}；\code{latent_feedback.py} & 交互时序、PPO、无独立估计器更新\\
 C9 & \code{docs/experiments/vita01evt_go2_transfer/p13_h6_traction_5k_20261101.md} & H6 5k 配方与既有实验背景\\
-C10 & \code{scripts/reinforcement_learning/traction/evaluate_frozen_latent.py}、\code{run_frozen_latent_long.py}（同目录）；\code{latent_pull_evaluation.py}、\code{latent_pose_evaluation.py}、\code{latent_evaluation.py}（相对 \code{rl/traction}） & 四足牵引协议与打分\\\bottomrule
+C10 & \code{scripts/reinforcement_learning/traction/evaluate_frozen_latent.py}、\code{run_frozen_latent_long.py}（同目录）；\code{latent_pull_evaluation.py}、\code{latent_pose_evaluation.py}、\code{latent_evaluation.py}（相对 \code{rl/traction}） & 旧版基线评估\\
+\midrule
+\multicolumn{3}{l}{\textbf{当前纯牵引方案}}\\*
+C11 & \code{scripts/reinforcement_learning/pure_traction/evaluate.py}；\code{source/cerebrix/cerebrix/rl/pure_traction/evaluation.py} 的 \code{score_pull}、\code{release_windows} 和 \code{following_metrics} & 标准协议、评估模式、评分和汇总\\
+C12 & \code{source/cerebrix/cerebrix/tasks/manager_based/pure_traction/task.py}；\code{source/cerebrix/cerebrix/rl/pure_traction/force.py} & 施力点、标签时序、执行指令、直立判定\\
+C13 & \code{source/cerebrix/cerebrix/tasks/manager_based/pure_traction/config.py}；\code{source/cerebrix/cerebrix/tasks/manager_based/locomotion/velocity/config/quadruped/vita_vita01evt/himloco_rewards.py} & 奖励项、默认权重、动作平滑\\
+C14 & \code{source/cerebrix/cerebrix/rl/pure_traction/} 下的 \code{model.py}、\code{learner.py} 和 \code{runner.py} & 网络结构、参数更新、ONNX 导出\\
+C15 & \code{source/cerebrix/cerebrix/rl/pure_traction/reference.py} & 力阈值、平移和偏航参考\\
 \end{longtable}
 \normalsize
-代码提交入口为
+旧版 H6 基线的代码提交入口为
 \url{https://github.com/VitaDynamics/cerebrix/tree/57a05ee00d229da6fd6f10defcc51e947247d6c6}。
 
-复核时可依次检查 C3 的配方、C4 的观测与反馈、C5 和 C6 的参考与奖励、C7 和 C8 的施力时序，以及 C10 的评估协议。力映射图可用 \code{scripts/plot_reference.py} 重建。
+可用 \code{scripts/plot_reference.py} 重建旧版力映射和理想模型示意图，用 \code{scripts/plot_traction_reference.py} 重建纯牵引稳态参考图。
