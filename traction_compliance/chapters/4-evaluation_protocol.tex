@@ -1,66 +1,69 @@
 \section{评价指标与实验协议}
 
-论文对照采用 \code{vbot} 纯牵引平地仿真协议。每次试验静置 $4\,\mathrm{s}$，施力 $7\,\mathrm{s}$，撤力后观察 $5\,\mathrm{s}$，控制周期为 $0.02\,\mathrm{s}$。以施力前的机头为基准，分别在前、左、右、后四个方向施加 $10$ 或 $30\,\mathrm{N}$ 的恒定世界系水平力，共 8 个用例。结果按拉力大小分别汇总，通过率同时报告通过数和试验总数。
+$\uparrow$ 表示越大越好，$\downarrow$ 表示越小越好，$\approx 1$ 表示接近 1 为佳。
 
-\subsection{关键指标}
-
-$\uparrow$ 表示越大越好，$\downarrow$ 表示越小越好。
-
-\subsubsection{2 秒内牵引响应通过率 \texorpdfstring{$\uparrow$}{↑}}
-施力后 $2\,\mathrm{s}$ 内，实际沿力速度首次连续 $0.2\,\mathrm{s}$ 不低于 $0.10\,\mathrm{m/s}$，且施力后半段的平均沿力速度也不低于该阈值。
-
-\subsubsection{转正通过率 \texorpdfstring{$\uparrow$}{↑}}
-仅统计左、右、后拉。机头与拉力夹角须连续 $0.3\,\mathrm{s}$ 不超过 $15^\circ$，施力结束前的最后 $0.3\,\mathrm{s}$ 也须满足该条件。
-
-\subsubsection{平面速度跟随 RMSE \texorpdfstring{$\downarrow$}{↓}}
-在完整施力段，对齐控制步和机身坐标系，计算实际平面速度与质量--阻尼参考速度之间欧氏距离的均方根，单位为 $\mathrm{m/s}$。各方法使用相同的参考规则和参数。
-
-\subsubsection{撤力后 3 秒内停稳率 \texorpdfstring{$\uparrow$}{↑}}
-机器人须在撤力后 $3\,\mathrm{s}$ 内停稳，并保持至第 $5\,\mathrm{s}$。停稳后，每个 $1\,\mathrm{s}$ 窗口内的最大平面位移和航向变化分别不超过 $7\,\mathrm{cm}$ 和 $0.10\,\mathrm{rad}$，且保持直立、无重置。处理后的 MLP 执行指令还须满足平均平移幅值不超过 $0.05\,\mathrm{m/s}$、平均绝对偏航指令不超过 $0.10\,\mathrm{rad/s}$。
-
-\subsubsection{撤力后 5 秒最大位移 \texorpdfstring{$\downarrow$}{↓}}
-以撤力瞬间的位置为起点，取随后 $5\,\mathrm{s}$ 内的最大平面位移，单位为 $\mathrm{cm}$。
-
-\subsection{其余指标}
-
-\subsubsection{牵引响应时间 \texorpdfstring{$\downarrow$}{↓}}
-从施力开始到首次满足持续沿力速度条件的时间。
-
-\subsubsection{移动方向余弦 \texorpdfstring{$\uparrow$}{↑}}
-计算施力后半段的平均实际平移速度与拉力方向的余弦，达到 $0.50$ 即通过。
-
-\subsubsection{转正时间 \texorpdfstring{$\downarrow$}{↓}}
-从施力开始到首次满足持续朝向条件的时间，并记录施力前后的朝向误差。
-
-\subsubsection{转正后沿力速度}
-取首次转正后 $0.5$--$2\,\mathrm{s}$ 的平均实际沿力速度，并检查窗口内是否保持对准。
-
-\subsubsection{相对正拉速度比（接近 1 为佳）}
-将转正后的平均沿力速度除以同档正拉在同一施力时段的平均沿力速度。正拉速度低于 $0.10\,\mathrm{m/s}$ 时省略该比例。
-
-\subsubsection{撤力后停稳时间 \texorpdfstring{$\downarrow$}{↓}}
-从撤力到首次满足停车判据并能持续稳定至观察结束的时间。
-
-\subsubsection{撤力末段站稳率 \texorpdfstring{$\uparrow$}{↑}}
-撤力后最后 $1\,\mathrm{s}$ 内，最大平面位移不超过 $5\,\mathrm{cm}$，航向变化不超过 $0.10\,\mathrm{rad}$，且保持直立、无重置。
-
-\subsubsection{全程直立率 \texorpdfstring{$\uparrow$}{↑}}
-逐例记录直立帧占比，汇总全程每帧均直立的试验数和比例。该项独立报告。
-
-\subsubsection{全程无重置}
-检查试验期间是否发生回合重置。
-
-\subsubsection{撤力综合通过率 \texorpdfstring{$\uparrow$}{↑}}
-统计同时满足按时停稳、末段站稳及全程无重置的试验比例。
-
-\subsubsection{总通过率 \texorpdfstring{$\uparrow$}{↑}}
-统计通过所有适用行为判据的试验比例。
-
-\subsubsection{执行指令跟踪 RMSE \texorpdfstring{$\downarrow$}{↓}}
-按前向、侧向和偏航分别计算实际速度相对底层执行指令的 RMSE。
-
-\subsubsection{状态估计 RMSE \texorpdfstring{$\downarrow$}{↓}}
-比较估计值与仿真真值，报告速度、外力和外力矩的 RMSE，并单列转正窗口内的前向力 RMSE。
-
-\subsubsection{转正后指令均值}
-在转正窗口内分别记录参考指令、MLP 原始输出和底层执行指令的均值。
+\begingroup
+\small
+\renewcommand{\arraystretch}{1.08}
+\setlength{\LTpre}{4pt}
+\newcommand{\evaluationrowrule}{%
+  \noalign{\nointerlineskip
+    \kern 0.9pt
+    \hbox to \textwidth{\color{ink!38}\cleaders\hbox{\rule{2.5pt}{0.35pt}\kern 1.8pt}\hfill}%
+    \kern 0.9pt
+    \nointerlineskip}%
+}
+\begin{longtable}{@{}P{39mm}>{\centering\arraybackslash}p{11mm}P{\dimexpr\textwidth-50mm-4\tabcolsep\relax}@{}}
+\toprule
+\textbf{项目} & \textbf{方向} & \textbf{设置或判据} \\
+\midrule
+\endhead
+\bottomrule
+\endlastfoot
+\multicolumn{3}{@{}l}{\textbf{实验协议}} \\*
+场景与施力 & & \code{vbot} 平地纯牵引仿真。以施力前的机头为基准，在前、左、右、后四向施加 $10$ 或 $30\,\mathrm{N}$ 的恒定世界系水平力，共 8 个用例。 \\
+\evaluationrowrule
+试验时序 & & 静置 $4\,\mathrm{s}$，施力 $7\,\mathrm{s}$，撤力后观察 $5\,\mathrm{s}$。控制周期为 $0.02\,\mathrm{s}$。 \\
+\evaluationrowrule
+报告口径 & & 论文按拉力档汇总逐例结果，通过率同时报告通过数和试验总数。 \\
+\midrule
+\multicolumn{3}{@{}l}{\textbf{评价指标}} \\*
+2 秒内牵引响应通过率 & $\uparrow$ & 施力后 $2\,\mathrm{s}$ 内开始出现连续 $0.2\,\mathrm{s}$ 的沿力速度 $\ge 0.10\,\mathrm{m/s}$，且施力后半段的平均沿力速度也达到该阈值。 \\
+\evaluationrowrule
+牵引响应时间 & $\downarrow$ & 从施力开始到首次满足持续沿力速度条件的时间。 \\
+\evaluationrowrule
+移动方向余弦 & $\uparrow$ & 施力后半段的平均实际平移速度与拉力方向的余弦，$\ge 0.50$ 为通过。 \\
+\evaluationrowrule
+转正通过率 & $\uparrow$ & 仅统计左、右、后拉。机头与拉力夹角须连续 $0.3\,\mathrm{s}$ 不超过 $15^\circ$，且施力结束前的最后 $0.3\,\mathrm{s}$ 也达标。 \\
+\evaluationrowrule
+转正时间 & $\downarrow$ & 施力至首次满足持续朝向条件的时间，另记施力前后的朝向误差。 \\
+\evaluationrowrule
+转正后沿力速度 & -- & 转正后 $0.5$--$2\,\mathrm{s}$ 的平均实际沿力速度，并检查窗口内是否保持对准。 \\
+\evaluationrowrule
+相对正拉速度比 & $\approx 1$ & 转正后沿力速度除以同档正拉在同一时段的平均沿力速度。正拉速度低于 $0.10\,\mathrm{m/s}$ 时省略。 \\
+\evaluationrowrule
+转正后指令均值 & -- & 统计转正窗口内参考、MLP 原始输出和底层执行指令的均值。 \\
+\evaluationrowrule
+平面速度跟随 RMSE & $\downarrow$ & 在完整施力段，用同一控制步、同一机身坐标系下的实际平面速度和统一的质量--阻尼参考计算向量 RMSE（$\mathrm{m/s}$）。 \\
+\evaluationrowrule
+执行指令跟踪 RMSE & $\downarrow$ & 施力段按前向、侧向和偏航计算实际速度对执行指令的 RMSE。 \\
+\evaluationrowrule
+撤力后 3 秒内停稳率 & $\uparrow$ & 撤力后 $3\,\mathrm{s}$ 内停稳并保持到第 $5\,\mathrm{s}$。停稳后每个 $1\,\mathrm{s}$ 窗口内，最大位移 $\le 7\,\mathrm{cm}$、最大航向变化 $\le 0.10\,\mathrm{rad}$，且直立、无重置。处理后的 MLP 执行指令平均平移幅值 $\le 0.05\,\mathrm{m/s}$、平均绝对偏航指令 $\le 0.10\,\mathrm{rad/s}$。 \\
+\evaluationrowrule
+撤力后停稳时间 & $\downarrow$ & 从撤力到首次符合停稳条件且持续稳定至观察结束的时间。 \\
+\evaluationrowrule
+撤力后 5 秒最大位移 & $\downarrow$ & 以撤力瞬间的位置为起点，取随后 $5\,\mathrm{s}$ 内的最大平面位移（$\mathrm{cm}$）。 \\
+\evaluationrowrule
+撤力末段站稳率 & $\uparrow$ & 最后 $1\,\mathrm{s}$ 内最大位移 $\le 5\,\mathrm{cm}$、最大航向变化 $\le 0.10\,\mathrm{rad}$，且直立、无重置。 \\
+\evaluationrowrule
+全程直立率 & $\uparrow$ & 逐例记录直立帧占比，独立汇总全程每帧均直立的试验数和比例。 \\
+\evaluationrowrule
+全程无重置 & -- & 逐例记录试验期间是否发生回合重置。 \\
+\evaluationrowrule
+状态估计 RMSE & $\downarrow$ & \code{learned} 模式按全程帧和三轴分量计算线速度、外力和力矩 RMSE，另报转正窗口内的前向力 RMSE。 \\
+\evaluationrowrule
+撤力综合通过率 & $\uparrow$ & 同时满足按时停稳、末段站稳及全程无重置的试验比例。 \\
+\evaluationrowrule
+总通过率 & $\uparrow$ & 通过所有适用行为判据的试验比例。 \\
+\end{longtable}
+\endgroup

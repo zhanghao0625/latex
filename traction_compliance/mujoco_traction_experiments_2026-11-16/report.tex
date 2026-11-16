@@ -25,12 +25,12 @@
 
 \section*{施力设置}
 
-两次实验均使用开启速度跟踪奖励的同一策略。取世界系 \(+x\) 为试验前进方向，\(+z\) 竖直向上，\(\alpha\) 为绳子相对世界水平面的仰角。施力开始后，直到当次试验结束，绳张力 \(F\) 与绳角 \(\alpha\) 均保持为该档的设定值。因此，世界系外力为
+三组实验均使用开启速度跟踪奖励的同一策略。取世界系 \(+x\) 为试验前进方向，\(+z\) 竖直向上，\(\alpha\) 为绳子相对世界水平面的仰角。实验一和实验二的施力阶段，绳张力 \(F\) 与绳角 \(\alpha\) 均保持为该档的设定值。因此，世界系外力为
 \[
   \mathbf F_w=(F\cos\alpha,\ 0,\ F\sin\alpha).
 \]
 
-牵引点固定在机身原点前方 \(17.287\unit{cm}\)，其机身系坐标为 \((0.17287,0,0)\unit{m}\)。牵引点随机器人移动和转动。机器人俯仰或改变航向时，换算到机身坐标系中的力方向随姿态改变。图中 \(\beta\) 为示意姿态的俯仰角，\(\gamma=\alpha-\beta\) 为矢状面内拉力与机身前向轴的夹角。
+牵引点固定在机身原点前方 \(17.287\unit{cm}\)，其机身系坐标为 \((0.17287,0,0)\unit{m}\)。牵引点随机器人移动和转动。在实验一和实验二中，机器人俯仰或改变航向时，换算到机身坐标系中的力方向随姿态改变。图中 \(\beta\) 为示意姿态的俯仰角，\(\gamma=\alpha-\beta\) 为矢状面内拉力与机身前向轴的夹角。
 
 \begin{minipage}{\linewidth}
 \centering
@@ -39,7 +39,7 @@
 \label{fig:rope-geometry}
 \end{minipage}
 
-实验一按图~\ref{fig:rope-geometry} 设置绳角，平地为 \(16.9^\circ\)，上坡为 \(33.4^\circ\)，上楼梯为 \(42.5^\circ\)。实验二对三种地形统一使用 \(33.4^\circ\)，以比较坡度与楼梯级高变化时所需的拉力。
+实验一按图~\ref{fig:rope-geometry} 设置绳角，平地为 \(16.9^\circ\)，上坡为 \(33.4^\circ\)，上楼梯为 \(42.5^\circ\)。实验二对三种地形统一使用 \(33.4^\circ\)，以比较坡度与楼梯级高变化时所需的拉力。实验三固定矢状面内拉力相对机身的角度，按机身俯仰更新世界系绳角，见第~\ref{sec:body-angle} 节。
 
 每个拉力档用五个初始位置复测。进入地形后，在世界系水平前向 \(x=1.2\) 至 \(3.6\unit{m}\) 的测量段内，用水平位移除以通过时间计算平均速度。
 
@@ -114,5 +114,43 @@
 \includegraphics[width=0.95\linewidth]{figures/02_geometry_force.png}
 \captionof{figure}{达标拉力随等效坡角和级高的变化。空心三角位于楼梯最后测试的 \(48\unit{N}\) 档。}
 \end{minipage}
+\clearpage
+\section{固定相对机身角的地形对照}
+\label{sec:body-angle}
+
+实验三对平地、\(15^\circ\) 斜坡和级高 \(15\unit{cm}\)、踏面深度 \(30\unit{cm}\) 的楼梯进行交叉对照，共 1270 次。
+各次试验固定绳张力，水平牵引指向沿世界系 \(+x\)。
+每个仿真步用机身前向轴在世界 \(x\)--\(z\) 平面上的仰角 \(\beta(t)\) 更新世界系绳角
+\(\alpha(t)=\gamma+\beta(t)\)，从而让矢状面内相对机身的绳角 \(\gamma\) 保持在设定值。
+
+\begin{minipage}{\linewidth}
+\centering
+\captionof{table}{五次均完成且达到 \(1.0\unit{m/s}\) 的最低实测绳张力}
+\label{tab:body-angle}
+\begin{tabular}{l r r r}
+\toprule
+地形 & \(\gamma=16.9^\circ\) & \(\gamma=18.4^\circ\) & \(\gamma=24.4^\circ\) \\
+\midrule
+平地 & \(22.0\unit{N}\) & \(22.0\unit{N}\) & \(22.0\unit{N}\) \\
+\(15^\circ\) 斜坡 & \(23.0\unit{N}\) & \(23.5\unit{N}\) & \(23.5\unit{N}\) \\
+\(15\unit{cm}\) 楼梯 & \(24.5\unit{N}\) & \(25.0\unit{N}\) & \(32.0\unit{N}\) \\
+\bottomrule
+\end{tabular}
+\end{minipage}
+
+在三个相对角下，\(15^\circ\) 斜坡比平地仅多 \(1\)--\(1.5\unit{N}\)（约 \(5\%\)--\(7\%\)）。
+固定 \(16.9^\circ\) 从平地换到楼梯多 \(2.5\unit{N}\)，在同一楼梯上把相对角增至 \(24.4^\circ\) 又多 \(7.5\unit{N}\)。
+这反映了楼梯对较大相对角更敏感。
+
+固定相对角时，世界系绳角随俯仰而变。表中跨地形的差值反映了这一控制条件下，重力、地面接触和牵引方向共同作用的结果。
+
+\begin{minipage}{\linewidth}
+\centering
+\includegraphics[width=0.98\linewidth]{figures/03_body_angle_vs_terrain.png}
+\captionof{figure}{不同相对机身角下的达标张力。空心三角表示扫到 \(50\unit{N}\) 仍未五次均达标。}
+\end{minipage}
+
+目标提高到 \(1.46\unit{m/s}\) 时，平地需 \(31\unit{N}\)，斜坡需 \(32\)--\(34\unit{N}\)。
+楼梯在相对角 \(18.4^\circ\) 时用 \(44\unit{N}\) 五次均达标，其余两个角度在测试范围内均未五次全过。
 \end{document}
 
