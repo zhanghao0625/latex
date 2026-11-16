@@ -1,18 +1,66 @@
 \section{评价指标与实验协议}
 
-\subsection{四足纯牵引实验}
-采用现有 H6 仿真评估的 \code{pull_release} 协议和 \code{world_pose_v2} 打分。原始速度指令全程为零。标准批量评估在平地进行，每次持续 $30\,\mathrm{s}$，控制周期为 $0.02\,\mathrm{s}$。前 $4\,\mathrm{s}$ 无外力，$4$ 至 $8\,\mathrm{s}$ 施加牵引，之后撤力。水平力取 $25$ 或 $45\,\mathrm N$，方向从机身正前方起每隔 $45^\circ$ 取一个，共 16 种组合。记录实际施力、处理后的网络修正、机身速度、位置、航向和回合重置状态。\ev{C10}
+论文对照采用 \code{vbot} 纯牵引平地仿真协议。每次试验静置 $4\,\mathrm{s}$，施力 $7\,\mathrm{s}$，撤力后观察 $5\,\mathrm{s}$，控制周期为 $0.02\,\mathrm{s}$。以施力前的机头为基准，分别在前、左、右、后四个方向施加 $10$ 或 $30\,\mathrm{N}$ 的恒定世界系水平力，共 8 个用例。结果按拉力大小分别汇总，通过率同时报告通过数和试验总数。
 
-\subsection{通过判据}
-\begin{enumerate}[itemsep=0.45em]
-  \item \textbf{有没有响应。}
-  将实际平移速度投影到当前力映射给出的参考方向。施力后 $2.0\,\mathrm{s}$ 内，投影应首次达到 $0.10\,\mathrm{m/s}$ 并持续至少 $0.2\,\mathrm{s}$。牵引后半段的平均投影也应达到 $0.10\,\mathrm{m/s}$。代码对处理后的网络平移修正另做同样的检查。\ev{C10}
+\subsection{关键指标}
 
-  \item \textbf{方向对不对。}
-  牵引后半段，平均实际平移速度与参考方向的余弦应至少为 $0.50$，即夹角不超过 $60^\circ$。处理后的网络修正使用相同门槛。偏航参考修正的幅值超过 $0.05\,\mathrm{rad/s}$ 时，沿该偏航方向的平均实际角速度与平均网络修正应分别达到 $0.05$ 和 $0.10\,\mathrm{rad/s}$。平移和偏航方向均以现行力映射为准。\ev{C10}
+$\uparrow$ 表示越大越好，$\downarrow$ 表示越小越好。
 
-  \item \textbf{松手后能不能停稳。}
-  撤力后 $5.0\,\mathrm{s}$ 内应开始一个满足条件的 $1.0\,\mathrm{s}$ 窗口。窗口内相对起点的最大平移位移和最大航向变化分别不超过 $0.07\,\mathrm m$ 和 $0.10\,\mathrm{rad}$，网络平移修正的平均范数和偏航修正的平均绝对值分别不超过 $0.05\,\mathrm{m/s}$ 和 $0.10\,\mathrm{rad/s}$。同时，撤力 $2.0\,\mathrm{s}$ 后的观测段还须通过站立检查，考察速度、位移、航向漂移及累计路径。回合全程不得重置，直立帧占比至少为 $99\%$。\ev{C10}
-\end{enumerate}
+\subsubsection{2 秒内牵引响应通过率 \texorpdfstring{$\uparrow$}{↑}}
+施力后 $2\,\mathrm{s}$ 内，实际沿力速度首次连续 $0.2\,\mathrm{s}$ 不低于 $0.10\,\mathrm{m/s}$，且施力后半段的平均沿力速度也不低于该阈值。
 
-结果报告各项通过率及全部检查同时通过的回合比例。标准批量评估同时运行冻结底座与加装牵引 MLP 两个分支。比较时单独列出实际机身响应与站立稳定性，底座分支的网络修正在评估中固定为零。\ev{C10}
+\subsubsection{转正通过率 \texorpdfstring{$\uparrow$}{↑}}
+仅统计左、右、后拉。机头与拉力夹角须连续 $0.3\,\mathrm{s}$ 不超过 $15^\circ$，施力结束前的最后 $0.3\,\mathrm{s}$ 也须满足该条件。
+
+\subsubsection{平面速度跟随 RMSE \texorpdfstring{$\downarrow$}{↓}}
+在完整施力段，对齐控制步和机身坐标系，计算实际平面速度与质量--阻尼参考速度之间欧氏距离的均方根，单位为 $\mathrm{m/s}$。各方法使用相同的参考规则和参数。
+
+\subsubsection{撤力后 3 秒内停稳率 \texorpdfstring{$\uparrow$}{↑}}
+机器人须在撤力后 $3\,\mathrm{s}$ 内停稳，并保持至第 $5\,\mathrm{s}$。停稳后，每个 $1\,\mathrm{s}$ 窗口内的最大平面位移和航向变化分别不超过 $7\,\mathrm{cm}$ 和 $0.10\,\mathrm{rad}$，且保持直立、无重置。处理后的 MLP 执行指令还须满足平均平移幅值不超过 $0.05\,\mathrm{m/s}$、平均绝对偏航指令不超过 $0.10\,\mathrm{rad/s}$。
+
+\subsubsection{撤力后 5 秒最大位移 \texorpdfstring{$\downarrow$}{↓}}
+以撤力瞬间的位置为起点，取随后 $5\,\mathrm{s}$ 内的最大平面位移，单位为 $\mathrm{cm}$。
+
+\subsection{其余指标}
+
+\subsubsection{牵引响应时间 \texorpdfstring{$\downarrow$}{↓}}
+从施力开始到首次满足持续沿力速度条件的时间。
+
+\subsubsection{移动方向余弦 \texorpdfstring{$\uparrow$}{↑}}
+计算施力后半段的平均实际平移速度与拉力方向的余弦，达到 $0.50$ 即通过。
+
+\subsubsection{转正时间 \texorpdfstring{$\downarrow$}{↓}}
+从施力开始到首次满足持续朝向条件的时间，并记录施力前后的朝向误差。
+
+\subsubsection{转正后沿力速度}
+取首次转正后 $0.5$--$2\,\mathrm{s}$ 的平均实际沿力速度，并检查窗口内是否保持对准。
+
+\subsubsection{相对正拉速度比（接近 1 为佳）}
+将转正后的平均沿力速度除以同档正拉在同一施力时段的平均沿力速度。正拉速度低于 $0.10\,\mathrm{m/s}$ 时省略该比例。
+
+\subsubsection{撤力后停稳时间 \texorpdfstring{$\downarrow$}{↓}}
+从撤力到首次满足停车判据并能持续稳定至观察结束的时间。
+
+\subsubsection{撤力末段站稳率 \texorpdfstring{$\uparrow$}{↑}}
+撤力后最后 $1\,\mathrm{s}$ 内，最大平面位移不超过 $5\,\mathrm{cm}$，航向变化不超过 $0.10\,\mathrm{rad}$，且保持直立、无重置。
+
+\subsubsection{全程直立率 \texorpdfstring{$\uparrow$}{↑}}
+逐例记录直立帧占比，汇总全程每帧均直立的试验数和比例。该项独立报告。
+
+\subsubsection{全程无重置}
+检查试验期间是否发生回合重置。
+
+\subsubsection{撤力综合通过率 \texorpdfstring{$\uparrow$}{↑}}
+统计同时满足按时停稳、末段站稳及全程无重置的试验比例。
+
+\subsubsection{总通过率 \texorpdfstring{$\uparrow$}{↑}}
+统计通过所有适用行为判据的试验比例。
+
+\subsubsection{执行指令跟踪 RMSE \texorpdfstring{$\downarrow$}{↓}}
+按前向、侧向和偏航分别计算实际速度相对底层执行指令的 RMSE。
+
+\subsubsection{状态估计 RMSE \texorpdfstring{$\downarrow$}{↓}}
+比较估计值与仿真真值，报告速度、外力和外力矩的 RMSE，并单列转正窗口内的前向力 RMSE。
+
+\subsubsection{转正后指令均值}
+在转正窗口内分别记录参考指令、MLP 原始输出和底层执行指令的均值。

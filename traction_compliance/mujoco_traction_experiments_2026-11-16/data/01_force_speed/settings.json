@@ -1,0 +1,28 @@
+{
+  "version": "4.0.1",
+  "checkpoint": "/data/hao.zhang/zh-workspace/vbot/logs/pure_traction/pure_traction_4096_gpu2_tracking_20261115_232525/train/model_10000.pt",
+  "checkpoint_sha256": "e1c3546410b6f1895f71bedd1941c526ccdfa73d893cb452e522b6de05d0ffe7",
+  "mass_kg": 15.974677999999999,
+  "pull_angles_deg": {
+    "flat": 16.9,
+    "ramp": 33.4,
+    "stairs": 42.5
+  },
+  "pull_point_b_m": [
+    0.17287,
+    0.0,
+    0.0
+  ],
+  "ramp_deg": 15.0,
+  "stair_rise_m": 0.15,
+  "stair_run_m": 0.3,
+  "measurement_range_x_m": [
+    1.2,
+    3.6
+  ],
+  "confirmation_x_m": 4.05,
+  "physics_dt": 0.005,
+  "control_dt": 0.02,
+  "friction": 1.0,
+  "oracle": false
+}
