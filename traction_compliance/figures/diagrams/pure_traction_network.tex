@@ -1,0 +1,64 @@
+\begin{tikzpicture}[
+  block/.style={draw=ink,fill=ink!4,rounded corners=2pt,
+    align=center,inner sep=4pt,font=\small},
+  input/.style={block,minimum height=19mm},
+  estimate output/.style={block,text width=12mm,minimum height=8mm,
+    inner sep=1.4pt,font=\footnotesize},
+  >={Stealth[length=2mm]},line width=0.7pt
+]
+\node[block,text width=73mm,minimum height=14mm] (history) at (-16mm,0)
+  {\textbf{本体观测历史}\quad $h_t$（6 帧，270 维）\\[2pt]
+   最新帧含缩放后的当前执行指令 $S\bm c_t$};
+
+\node[input,text width=28mm] (base) at (-58mm,-25mm)
+  {\textbf{冻结 Policy8}\\[2pt]关节动作 $\bm a_t$\\（12 维）};
+\node[input,text width=36mm] (estimate) at (-17mm,-25mm)
+  {\textbf{状态估计器}\\[2pt]
+   \mbox{\scriptsize $270\!\to\!512\!\to\!256\!\to\!128\!\to\!9$}\\[2pt]
+   {\footnotesize 归一化输出（9 维）}};
+\node[input,text width=27mm] (latest) at (23mm,-25mm)
+  {\textbf{最新帧观测}\\[2pt]$\bm o_t$（45 维）};
+\node[input,text width=27mm] (parameters) at (61mm,-25mm)
+  {\textbf{参考参数}\\[2pt]$(D,\tau)$ 归一化\\（2 维）};
+
+\node[estimate output] (velocity) at (-33mm,-42.5mm) {线速度\\3 维};
+\node[estimate output] (force) at (-17mm,-42.5mm) {外力\\3 维};
+\node[estimate output] (moment) at (-1mm,-42.5mm) {力矩\\3 维};
+
+\node[block,text width=28mm,minimum height=17mm] (simulation) at (-58mm,-60mm)
+  {\textbf{仿真执行}\\[2pt]获取下一帧本体状态};
+\node[block,fill=ink!8,text width=96mm,minimum height=15mm] (actor) at (23mm,-60mm)
+  {\textbf{速度策略 MLP}\quad $56\to256\to128\to64\to3$\\[2pt]
+   输出前向、侧向、偏航速度均值};
+\node[block,text width=96mm,minimum height=15mm] (process) at (23mm,-80mm)
+  {\textbf{限幅与死区}\\[2pt]
+   训练时采样，推理时取均值，再处理原始指令 $\bm u_t$\\[2pt]
+   $\bm c_{t+1}=\mathcal P(\bm u_t)$};
+\node[block,text width=128mm,minimum height=14mm] (next) at (-4mm,-106mm)
+  {\textbf{更新下一帧观测}\quad
+   $\bm o_{t+1}[0{:}3]=S\bm c_{t+1}$，$S=\operatorname{diag}(2,2,0.25)$\\[2pt]
+   将新观测加入历史 $h_{t+1}$};
+
+\draw[->] ([xshift=-30mm]history.south) -- ++(0,-4mm) -| (base.north);
+\draw[->] ([xshift=-1mm]history.south) -- (estimate.north);
+\draw[->] ([xshift=29mm]history.south) -- ++(0,-4mm) -| (latest.north);
+\draw[->] (base.south) -- (simulation.north);
+\coordinate (estimate-split) at (-17mm,-36.5mm);
+\draw (estimate.south) -- (estimate-split);
+\draw[->] (estimate-split) -| (velocity.north);
+\draw[->] (estimate-split) -- (force.north);
+\draw[->] (estimate-split) -| (moment.north);
+\coordinate (estimate-merge) at (-17mm,-48.8mm);
+\draw (velocity.south) |- (estimate-merge);
+\draw (force.south) -- (estimate-merge);
+\draw (moment.south) |- (estimate-merge);
+\draw[->] (estimate-merge) -- node[right,font=\scriptsize] {截断梯度} ([xshift=-40mm]actor.north);
+\draw[->] (latest.south) -- (actor.north);
+\draw[->] (parameters.south) -- ([xshift=38mm]actor.north);
+\draw[->] (actor.south) -- (process.north);
+\draw[->] (simulation.south) -- ([xshift=-54mm]next.north);
+\draw[->] (process.south) -- ([xshift=27mm]next.north);
+\coordinate (loop) at (79mm,0);
+\draw[->,dashed,draw=ink!65] (next.east) -- (loop |- next.east) -- (loop)
+  -- node[above,font=\footnotesize] {进入下一控制步} (history.east);
+\end{tikzpicture}
